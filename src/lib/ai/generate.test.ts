@@ -192,3 +192,49 @@ describe('generateReply — Anthropic', () => {
     expect(body.messages).toHaveLength(1)
   })
 })
+
+describe('generateReply — OpenRouter', () => {
+  it('calls the OpenRouter chat completions endpoint and returns the reply', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse({
+        choices: [{ message: { content: 'Sure — happy to help!' } }],
+        usage: { prompt_tokens: 42, completion_tokens: 8, total_tokens: 50 },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await generateReply({
+      config: config({ provider: 'openrouter', model: 'openai/gpt-4o-mini' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'Hi' }],
+    })
+
+    expect(res).toEqual({
+      text: 'Sure — happy to help!',
+      handoff: false,
+      usage: { promptTokens: 42, completionTokens: 8, totalTokens: 50 },
+    })
+    const [url, opts] = fetchMock.mock.calls[0]
+    expect(url).toContain('openrouter.ai')
+    expect(opts.headers.Authorization).toBe('Bearer sk-test')
+    const body = JSON.parse(opts.body)
+    expect(body.model).toBe('openai/gpt-4o-mini')
+  })
+
+  it('maps a 401 to an invalid_key AiError', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        errResponse(401, { error: { message: 'Incorrect API key' } }),
+      ),
+    )
+
+    await expect(
+      generateReply({
+        config: config({ provider: 'openrouter' }),
+        systemPrompt: 'sys',
+        messages: [{ role: 'user', content: 'Hi' }],
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_key', status: 401 })
+  })
+})
