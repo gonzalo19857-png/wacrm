@@ -5,6 +5,7 @@ import { retrieveKnowledgeForMessages } from './knowledge'
 import { generateReply } from './generate'
 import { buildSystemPrompt } from './defaults'
 import { buildHandoffSummary } from './handoff'
+import { enforceWhatsAppEmphasis } from './format-whatsapp'
 import { getProductImage } from './product-images'
 import { logAiUsage } from './usage'
 import { engineSendText, engineSendMedia } from '@/lib/flows/meta-send'
@@ -112,11 +113,15 @@ export async function dispatchInboundToAiReply(
       knowledge,
     })
 
-    const { text, handoff, imageKey, usage } = await generateReply({
+    const { text: rawText, handoff, imageKey, usage } = await generateReply({
       config,
       systemPrompt,
       messages,
     })
+    // Enforce bold talla/price + spacing deterministically — prompting
+    // alone gets it right only some of the time. No-op on text that
+    // doesn't mention a talla or an S/ price.
+    const text = enforceWhatsAppEmphasis(rawText)
 
     // Record token spend on the account's BYO key. Fire-and-forget so it
     // never adds latency to the customer-facing send: `logAiUsage`
