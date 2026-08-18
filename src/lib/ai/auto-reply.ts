@@ -100,7 +100,9 @@ export async function dispatchInboundToAiReply(
     }
 
     // Ground the reply in the account's knowledge base (best-effort).
-    const { excerpts: knowledge, imageUrl } = await retrieveKnowledgeForMessages(
+    // Only the text excerpts are used here — see resolvedImageUrl below
+    // for why the RAG-matched document's image is never used directly.
+    const { excerpts: knowledge } = await retrieveKnowledgeForMessages(
       db,
       accountId,
       config,
@@ -194,14 +196,15 @@ export async function dispatchInboundToAiReply(
         aiGenerated: true,
       })
 
-    // Which image (if any) to attach: the model's own `[[IMAGE:<key>]]`
-    // pick — precise, since only it knows which variant (e.g. talla)
-    // the reply is actually about — takes priority over the RAG-based
-    // top-matched-document image, which is a coarser fallback (right
-    // category, but can't distinguish variants within it).
-    const resolvedImageUrl = imageKey
-      ? (await getProductImage(db, accountId, imageKey)) ?? imageUrl
-      : imageUrl
+    // Which image (if any) to attach: ONLY the model's own explicit
+    // `[[IMAGE:<key>]]` pick — never the RAG top-matched-document image
+    // as a fallback. That fallback sounds reasonable (right category
+    // even without a sentinel) but in practice it's a coarse guess off
+    // whatever chunk best matched the latest turns, and a short
+    // follow-up reply (the model answering a quick question without
+    // re-emitting the sentinel) can retrieve a completely unrelated
+    // document — better to send no image than the wrong one.
+    const resolvedImageUrl = imageKey ? await getProductImage(db, accountId, imageKey) : null
 
     // Product photo: providers are text-only, so this is the only way a
     // picture reaches the customer without a human. Sent as ONE message

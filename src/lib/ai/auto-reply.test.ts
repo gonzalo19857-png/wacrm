@@ -131,36 +131,7 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     expect(systemPrompt).toContain('Returns accepted within 30 days.')
   })
 
-  it('sends the reply as an image with the text as its caption, in one message', async () => {
-    h.retrieveKnowledge.mockResolvedValue({
-      excerpts: ['SUV cover, talla M.'],
-      imageUrl: 'https://example.com/suv-m.jpg',
-    })
-    await dispatchInboundToAiReply(ARGS)
-    expect(h.engineSendMedia).toHaveBeenCalledWith(
-      expect.objectContaining({
-        conversationId: 'conv-1',
-        kind: 'image',
-        link: 'https://example.com/suv-m.jpg',
-        caption: 'Hello!',
-      }),
-    )
-    expect(h.engineSendText).not.toHaveBeenCalled()
-  })
-
-  it('sends plain text when retrieval found no image', async () => {
-    await dispatchInboundToAiReply(ARGS)
-    expect(h.engineSendMedia).not.toHaveBeenCalled()
-    expect(h.engineSendText).toHaveBeenCalled()
-  })
-
-  it("prefers the model's [[IMAGE:<key>]] pick over the RAG document image", async () => {
-    // The RAG match only knows the category (SUV); the sentinel names
-    // the exact variant (talla L) the model actually recommended.
-    h.retrieveKnowledge.mockResolvedValue({
-      excerpts: ['SUV cover.'],
-      imageUrl: 'https://example.com/suv-m.jpg', // wrong talla — coarse fallback
-    })
+  it('sends the reply as an image with the text as its caption when the model picks one', async () => {
     h.generateReply.mockResolvedValue({
       text: 'Talla L',
       handoff: false,
@@ -168,17 +139,28 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     })
     h.getProductImage.mockResolvedValue('https://example.com/suv-l.jpg')
     await dispatchInboundToAiReply(ARGS)
-    expect(h.getProductImage).toHaveBeenCalledWith(
-      expect.anything(),
-      'acct-1',
-      'suv-l',
-    )
+    expect(h.getProductImage).toHaveBeenCalledWith(expect.anything(), 'acct-1', 'suv-l')
     expect(h.engineSendMedia).toHaveBeenCalledWith(
-      expect.objectContaining({ link: 'https://example.com/suv-l.jpg' }),
+      expect.objectContaining({
+        conversationId: 'conv-1',
+        kind: 'image',
+        link: 'https://example.com/suv-l.jpg',
+        caption: '*talla L*',
+      }),
     )
+    expect(h.engineSendText).not.toHaveBeenCalled()
   })
 
-  it('falls back to the RAG image when the sentinel key has no match', async () => {
+  it('sends plain text when the model names no image key', async () => {
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendMedia).not.toHaveBeenCalled()
+    expect(h.engineSendText).toHaveBeenCalled()
+  })
+
+  it('sends text-only — never a RAG-guessed image — when the sentinel key has no configured match', async () => {
+    // Retrieval matched a document with its own image (a different,
+    // coarser signal than the model's own pick); that image must never
+    // be used as a fallback — see resolvedImageUrl in auto-reply.ts.
     h.retrieveKnowledge.mockResolvedValue({
       excerpts: ['SUV cover.'],
       imageUrl: 'https://example.com/suv-m.jpg',
@@ -190,27 +172,31 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     })
     h.getProductImage.mockResolvedValue(null) // key not configured for this account
     await dispatchInboundToAiReply(ARGS)
-    expect(h.engineSendMedia).toHaveBeenCalledWith(
-      expect.objectContaining({ link: 'https://example.com/suv-m.jpg' }),
+    expect(h.engineSendMedia).not.toHaveBeenCalled()
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: '*talla L*' }),
     )
   })
 
   it('falls back to a text-only send when the caption exceeds 1024 chars', async () => {
-    h.retrieveKnowledge.mockResolvedValue({
-      excerpts: ['SUV cover, talla M.'],
-      imageUrl: 'https://example.com/suv-m.jpg',
+    h.generateReply.mockResolvedValue({
+      text: 'x'.repeat(1025),
+      handoff: false,
+      imageKey: 'suv-l',
     })
-    h.generateReply.mockResolvedValue({ text: 'x'.repeat(1025), handoff: false })
+    h.getProductImage.mockResolvedValue('https://example.com/suv-l.jpg')
     await dispatchInboundToAiReply(ARGS)
     expect(h.engineSendMedia).not.toHaveBeenCalled()
     expect(h.engineSendText).toHaveBeenCalled()
   })
 
   it('a failed image send falls back to a text-only send', async () => {
-    h.retrieveKnowledge.mockResolvedValue({
-      excerpts: ['SUV cover, talla M.'],
-      imageUrl: 'https://example.com/suv-m.jpg',
+    h.generateReply.mockResolvedValue({
+      text: 'Talla L',
+      handoff: false,
+      imageKey: 'suv-l',
     })
+    h.getProductImage.mockResolvedValue('https://example.com/suv-l.jpg')
     h.engineSendMedia.mockRejectedValue(new Error('meta down'))
     await expect(dispatchInboundToAiReply(ARGS)).resolves.toBeUndefined()
     expect(h.engineSendText).toHaveBeenCalled()
