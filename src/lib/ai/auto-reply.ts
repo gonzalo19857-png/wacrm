@@ -5,6 +5,7 @@ import { retrieveKnowledgeForMessages } from './knowledge'
 import { generateReply } from './generate'
 import { buildSystemPrompt } from './defaults'
 import { buildHandoffSummary } from './handoff'
+import { getProductImage } from './product-images'
 import { logAiUsage } from './usage'
 import { engineSendText, engineSendMedia } from '@/lib/flows/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
@@ -111,7 +112,7 @@ export async function dispatchInboundToAiReply(
       knowledge,
     })
 
-    const { text, handoff, usage } = await generateReply({
+    const { text, handoff, imageKey, usage } = await generateReply({
       config,
       systemPrompt,
       messages,
@@ -188,13 +189,22 @@ export async function dispatchInboundToAiReply(
         aiGenerated: true,
       })
 
+    // Which image (if any) to attach: the model's own `[[IMAGE:<key>]]`
+    // pick — precise, since only it knows which variant (e.g. talla)
+    // the reply is actually about — takes priority over the RAG-based
+    // top-matched-document image, which is a coarser fallback (right
+    // category, but can't distinguish variants within it).
+    const resolvedImageUrl = imageKey
+      ? (await getProductImage(db, accountId, imageKey)) ?? imageUrl
+      : imageUrl
+
     // Product photo: providers are text-only, so this is the only way a
     // picture reaches the customer without a human. Sent as ONE message
     // — the image with the reply as its caption — rather than two, so
     // the recommendation and the photo land together. Meta caps image
     // captions at 1024 chars; on the rare reply that runs longer, skip
     // the image rather than risk the send failing outright.
-    if (imageUrl && text.length <= 1024) {
+    if (resolvedImageUrl && text.length <= 1024) {
       try {
         await engineSendMedia({
           accountId,
@@ -202,7 +212,7 @@ export async function dispatchInboundToAiReply(
           conversationId,
           contactId,
           kind: 'image',
-          link: imageUrl,
+          link: resolvedImageUrl,
           caption: text,
           aiGenerated: true,
         })

@@ -56,10 +56,13 @@ export interface ProviderResult {
 
 /** Outcome of a generation call. */
 export interface GenerateResult {
-  /** The reply text, with any handoff sentinel stripped. */
+  /** The reply text, with any handoff/image sentinel stripped. */
   text: string
   /** True when the model asked to hand off to a human (auto-reply mode). */
   handoff: boolean
+  /** The key from a `[[IMAGE:<key>]]` sentinel, or null if the model
+   *  didn't request a specific product image. */
+  imageKey: string | null
   /** Provider token usage for this call, or null when unavailable. */
   usage: AiUsage | null
 }

@@ -25,6 +25,20 @@ export const AI_PROVIDER_DEFAULT_MODEL: Record<AiProvider, string> = {
  */
 export const HANDOFF_SENTINEL = '[[HANDOFF]]'
 
+/**
+ * Prefix for the sentinel the model uses to attach a specific product
+ * image (`[[IMAGE:<key>]]`) — e.g. when the reply depends on a variant
+ * (a recommended size, a color) that the model derived rather than
+ * text the customer typed, so retrieval-based grounding alone can't
+ * pick the right picture. The account's own system prompt defines
+ * which keys exist for its catalog; `generateReply` parses the
+ * sentinel out and `dispatchInboundToAiReply` resolves it against
+ * `ai_product_images`.
+ */
+export const IMAGE_SENTINEL_PREFIX = '[[IMAGE:'
+/** Matches `[[IMAGE:<key>]]`, capturing `<key>`. */
+export const IMAGE_SENTINEL_REGEX = /\[\[IMAGE:([^\]]+)\]\]/
+
 /** Cap on generated reply length — keeps WhatsApp replies short and
  *  bounds token spend on the caller's own key. Reasoning models (e.g.
  *  OpenRouter's `deepseek/deepseek-*-flash`) spend part of this budget
@@ -77,6 +91,9 @@ export function buildSystemPrompt(args: {
   if (mode === 'auto_reply') {
     parts.push(
       `You are replying automatically with no human in the loop. If you cannot confidently and safely help — the customer explicitly asks for a human, is upset or complaining, or the request needs information you do not have — reply with exactly ${HANDOFF_SENTINEL} and nothing else. A human agent will then take over. Prefer handing off over guessing.`,
+    )
+    parts.push(
+      `If the business context below defines product image keys, you may attach one specific image to your reply by adding ${IMAGE_SENTINEL_PREFIX}<key>]] on its own line — use the exact key for the specific variant your reply is about (e.g. a size you recommended), not a generic category guess. It will be stripped from what the customer sees, so never mention or describe it in your visible reply.`,
     )
   }
 

@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
   generateReply: vi.fn(),
   engineSendText: vi.fn(),
   engineSendMedia: vi.fn(),
+  getProductImage: vi.fn(),
   state: {
     conv: null as Record<string, unknown> | null,
     autoResponders: [] as { id: string }[],
@@ -22,6 +23,7 @@ vi.mock('./config', () => ({ loadAiConfig: h.loadAiConfig }))
 vi.mock('./context', () => ({ buildConversationContext: h.buildConversationContext }))
 vi.mock('./knowledge', () => ({ retrieveKnowledgeForMessages: h.retrieveKnowledge }))
 vi.mock('./generate', () => ({ generateReply: h.generateReply }))
+vi.mock('./product-images', () => ({ getProductImage: h.getProductImage }))
 vi.mock('@/lib/flows/meta-send', () => ({
   engineSendText: h.engineSendText,
   engineSendMedia: h.engineSendMedia,
@@ -98,9 +100,10 @@ beforeEach(() => {
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.retrieveKnowledge.mockResolvedValue({ excerpts: [], imageUrl: null })
-  h.generateReply.mockResolvedValue({ text: 'Hello!', handoff: false })
+  h.generateReply.mockResolvedValue({ text: 'Hello!', handoff: false, imageKey: null })
   h.engineSendText.mockResolvedValue({ whatsapp_message_id: 'm1' })
   h.engineSendMedia.mockResolvedValue({ whatsapp_message_id: 'm2' })
+  h.getProductImage.mockResolvedValue(null)
 })
 
 describe('dispatchInboundToAiReply — eligibility gates', () => {
@@ -149,6 +152,47 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     await dispatchInboundToAiReply(ARGS)
     expect(h.engineSendMedia).not.toHaveBeenCalled()
     expect(h.engineSendText).toHaveBeenCalled()
+  })
+
+  it("prefers the model's [[IMAGE:<key>]] pick over the RAG document image", async () => {
+    // The RAG match only knows the category (SUV); the sentinel names
+    // the exact variant (talla L) the model actually recommended.
+    h.retrieveKnowledge.mockResolvedValue({
+      excerpts: ['SUV cover.'],
+      imageUrl: 'https://example.com/suv-m.jpg', // wrong talla — coarse fallback
+    })
+    h.generateReply.mockResolvedValue({
+      text: 'Talla L',
+      handoff: false,
+      imageKey: 'suv-l',
+    })
+    h.getProductImage.mockResolvedValue('https://example.com/suv-l.jpg')
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.getProductImage).toHaveBeenCalledWith(
+      expect.anything(),
+      'acct-1',
+      'suv-l',
+    )
+    expect(h.engineSendMedia).toHaveBeenCalledWith(
+      expect.objectContaining({ link: 'https://example.com/suv-l.jpg' }),
+    )
+  })
+
+  it('falls back to the RAG image when the sentinel key has no match', async () => {
+    h.retrieveKnowledge.mockResolvedValue({
+      excerpts: ['SUV cover.'],
+      imageUrl: 'https://example.com/suv-m.jpg',
+    })
+    h.generateReply.mockResolvedValue({
+      text: 'Talla L',
+      handoff: false,
+      imageKey: 'suv-l',
+    })
+    h.getProductImage.mockResolvedValue(null) // key not configured for this account
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendMedia).toHaveBeenCalledWith(
+      expect.objectContaining({ link: 'https://example.com/suv-m.jpg' }),
+    )
   })
 
   it('falls back to a text-only send when the caption exceeds 1024 chars', async () => {
