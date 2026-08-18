@@ -1737,7 +1737,13 @@
       "addDoc": "Add document",
       "reindex": "Reindex",
       "reindexTooltip": "Re-embed all documents (e.g. after adding an embeddings key)",
-      "loading": "Loading…"
+      "loading": "Loading…",
+      "imageLabel": "Product image (optional)",
+      "imageHint": "Attached automatically alongside the auto-reply when this document grounds the answer.",
+      "uploadImage": "Upload image",
+      "removeImage": "Remove image",
+      "imageUploadFailed": "Failed to upload image.",
+      "imageTooLarge": "Image is too large (max 5 MB)."
     }
   }
 }

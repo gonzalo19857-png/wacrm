@@ -12,6 +12,17 @@ import { embedTexts, toVectorLiteral } from './embeddings'
 interface MatchRow {
   id: string
   content: string
+  document_id: string
+}
+
+export interface KnowledgeResult {
+  /** Excerpt text, ranked best-first — fed to `buildSystemPrompt`. */
+  excerpts: string[]
+  /** Public image URL of the top-ranked excerpt's parent document, when
+   *  it has one set. The auto-reply bot attaches this alongside its
+   *  text reply (providers are text-only, so this is the only way a
+   *  product photo reaches the customer without a human). */
+  imageUrl: string | null
 }
 
 /**
@@ -87,9 +98,10 @@ export async function retrieveKnowledge(
   config: Pick<AiConfig, 'embeddingsApiKey'>,
   queryText: string,
   k = 5,
-): Promise<string[]> {
+): Promise<KnowledgeResult> {
+  const empty: KnowledgeResult = { excerpts: [], imageUrl: null }
   const query = queryText.trim()
-  if (!query || k <= 0) return []
+  if (!query || k <= 0) return empty
 
   // Skip everything when the account has no knowledge base — otherwise
   // every draft / auto-reply would pay for a query embedding + two RPCs
@@ -100,12 +112,15 @@ export async function retrieveKnowledge(
       .from('ai_knowledge_chunks')
       .select('id', { count: 'exact', head: true })
       .eq('account_id', accountId)
-    if (error || !count) return []
+    if (error || !count) return empty
   } catch {
-    return []
+    return empty
   }
 
   const picked = new Map<string, string>() // id → content, preserves order
+  // Parent document of the very first row picked (i.e. the best-ranked
+  // match) — its image, if any, is the one attached to the reply.
+  let topDocumentId: string | null = null
 
   // Semantic path.
   if (config.embeddingsApiKey) {
@@ -118,7 +133,10 @@ export async function retrieveKnowledge(
           p_match_count: k,
         })
         if (!error && Array.isArray(data)) {
-          for (const row of data as MatchRow[]) picked.set(row.id, row.content)
+          for (const row of data as MatchRow[]) {
+            if (topDocumentId === null) topDocumentId = row.document_id
+            picked.set(row.id, row.content)
+          }
         }
       }
     } catch (err) {
@@ -137,7 +155,10 @@ export async function retrieveKnowledge(
       if (!error && Array.isArray(data)) {
         for (const row of data as MatchRow[]) {
           if (picked.size >= k) break
-          if (!picked.has(row.id)) picked.set(row.id, row.content)
+          if (!picked.has(row.id)) {
+            if (topDocumentId === null) topDocumentId = row.document_id
+            picked.set(row.id, row.content)
+          }
         }
       }
     } catch (err) {
@@ -145,5 +166,20 @@ export async function retrieveKnowledge(
     }
   }
 
-  return Array.from(picked.values()).slice(0, k)
+  const excerpts = Array.from(picked.values()).slice(0, k)
+  if (excerpts.length === 0 || !topDocumentId) return { excerpts, imageUrl: null }
+
+  let imageUrl: string | null = null
+  try {
+    const { data } = await db
+      .from('ai_knowledge_documents')
+      .select('image_url')
+      .eq('id', topDocumentId)
+      .maybeSingle()
+    imageUrl = (data as { image_url: string | null } | null)?.image_url ?? null
+  } catch (err) {
+    console.error('[ai knowledge] top-document image lookup failed:', err)
+  }
+
+  return { excerpts, imageUrl }
 }

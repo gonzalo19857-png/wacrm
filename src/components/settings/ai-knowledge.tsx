@@ -2,7 +2,16 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Plus, Trash2, Pencil, RefreshCw, BookOpen } from 'lucide-react';
+import {
+  Loader2,
+  Plus,
+  Trash2,
+  Pencil,
+  RefreshCw,
+  BookOpen,
+  ImagePlus,
+  X,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,6 +24,14 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { useTranslations } from 'next-intl';
+import {
+  uploadAccountMedia,
+  MEDIA_MAX_BYTES_BY_KIND,
+} from '@/lib/storage/upload-media';
+
+// Same public bucket the Flows media-node builder uploads to — reused
+// here so a knowledge doc's product photo doesn't need a second bucket.
+const KNOWLEDGE_IMAGE_BUCKET = 'flow-media';
 
 interface DocSummary {
   id: string;
@@ -39,9 +56,12 @@ export function AiKnowledgeCard({
   const [editing, setEditing] = useState<EditTarget>(null);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [saving, setSaving] = useState(false);
   const [reindexing, setReindexing] = useState(false);
   const loadedAccountIdRef = useRef<string | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const t = useTranslations('Settings.aiKnowledge');
 
   const fetchDocs = useCallback(async () => {
@@ -68,6 +88,7 @@ export function AiKnowledgeCard({
     setEditing('new');
     setTitle('');
     setContent('');
+    setImageUrl(null);
   };
 
   const openEdit = async (id: string) => {
@@ -81,6 +102,7 @@ export function AiKnowledgeCard({
       setEditing(id);
       setTitle(data.title ?? '');
       setContent(data.content ?? '');
+      setImageUrl(data.image_url ?? null);
     } catch {
       toast.error(t('openFailed'));
     }
@@ -90,6 +112,23 @@ export function AiKnowledgeCard({
     setEditing(null);
     setTitle('');
     setContent('');
+    setImageUrl(null);
+  };
+
+  const handleImageUpload = async (file: File) => {
+    if (file.size > MEDIA_MAX_BYTES_BY_KIND.image) {
+      toast.error(t('imageTooLarge'));
+      return;
+    }
+    setUploadingImage(true);
+    try {
+      const { publicUrl } = await uploadAccountMedia(KNOWLEDGE_IMAGE_BUCKET, file);
+      setImageUrl(publicUrl);
+    } catch {
+      toast.error(t('imageUploadFailed'));
+    } finally {
+      setUploadingImage(false);
+    }
   };
 
   const save = async () => {
@@ -105,7 +144,11 @@ export function AiKnowledgeCard({
         {
           method: isNew ? 'POST' : 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: title.trim(), content: content.trim() }),
+          body: JSON.stringify({
+            title: title.trim(),
+            content: content.trim(),
+            image_url: imageUrl,
+          }),
         },
       );
       const data = await res.json();
@@ -241,6 +284,57 @@ export function AiKnowledgeCard({
                     rows={8}
                     disabled={saving}
                   />
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('imageLabel')}</Label>
+                  <p className="text-xs text-muted-foreground">{t('imageHint')}</p>
+                  {imageUrl ? (
+                    <div className="flex items-center gap-3">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={imageUrl}
+                        alt=""
+                        className="h-16 w-16 rounded-md border border-border object-cover"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setImageUrl(null)}
+                        disabled={saving || uploadingImage}
+                      >
+                        <X className="mr-2 h-4 w-4" /> {t('removeImage')}
+                      </Button>
+                    </div>
+                  ) : (
+                    <div>
+                      <input
+                        ref={imageInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          e.target.value = '';
+                          if (file) void handleImageUpload(file);
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => imageInputRef.current?.click()}
+                        disabled={saving || uploadingImage}
+                      >
+                        {uploadingImage ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <ImagePlus className="mr-2 h-4 w-4" />
+                        )}
+                        {t('uploadImage')}
+                      </Button>
+                    </div>
+                  )}
                 </div>
                 <div className="flex justify-end gap-2">
                   <Button variant="ghost" onClick={cancelEdit} disabled={saving}>

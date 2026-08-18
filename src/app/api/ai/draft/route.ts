@@ -90,8 +90,10 @@ export async function POST(request: Request) {
     }
 
     // Ground the draft in the account's knowledge base (best-effort —
-    // returns [] when there's no KB or retrieval fails).
-    const knowledge = await retrieveKnowledge(
+    // returns [] when there's no KB or retrieval fails). The draft is
+    // human-reviewed before sending, so any grounding image is ignored
+    // here — only the live auto-reply bot attaches it automatically.
+    const { excerpts: knowledge } = await retrieveKnowledge(
       supabase,
       accountId,
       config,

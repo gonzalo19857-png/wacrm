@@ -72,7 +72,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const knowledge = await retrieveKnowledge(
+    const { excerpts: knowledge } = await retrieveKnowledge(
       supabase,
       accountId,
       config,

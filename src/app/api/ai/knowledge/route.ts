@@ -50,6 +50,10 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => null)
     const title = typeof body?.title === 'string' ? body.title.trim() : ''
     const content = typeof body?.content === 'string' ? body.content.trim() : ''
+    const imageUrl =
+      typeof body?.image_url === 'string' && body.image_url.trim()
+        ? body.image_url.trim()
+        : null
     if (!title || !content) {
       return NextResponse.json(
         { error: 'title and content are required' },
@@ -59,7 +63,13 @@ export async function POST(request: Request) {
 
     const { data: doc, error } = await supabase
       .from('ai_knowledge_documents')
-      .insert({ account_id: accountId, created_by: userId, title, content })
+      .insert({
+        account_id: accountId,
+        created_by: userId,
+        title,
+        content,
+        image_url: imageUrl,
+      })
       .select('id')
       .single()
     if (error || !doc) {

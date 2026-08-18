@@ -7,7 +7,7 @@ import { buildSystemPrompt } from './defaults'
 import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
 import { latestUserMessage } from './query'
-import { engineSendText } from '@/lib/flows/meta-send'
+import { engineSendText, engineSendMedia } from '@/lib/flows/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 
 interface DispatchArgs {
@@ -99,7 +99,7 @@ export async function dispatchInboundToAiReply(
     }
 
     // Ground the reply in the account's knowledge base (best-effort).
-    const knowledge = await retrieveKnowledge(
+    const { excerpts: knowledge, imageUrl } = await retrieveKnowledge(
       db,
       accountId,
       config,
@@ -187,6 +187,24 @@ export async function dispatchInboundToAiReply(
       text,
       aiGenerated: true,
     })
+
+    // Best-effort product photo: providers are text-only, so this is
+    // the only way a picture reaches the customer without a human.
+    // Never let a failed/slow media send undo the text already sent.
+    if (imageUrl) {
+      try {
+        await engineSendMedia({
+          accountId,
+          userId: configOwnerUserId,
+          conversationId,
+          contactId,
+          kind: 'image',
+          link: imageUrl,
+        })
+      } catch (err) {
+        console.error('[ai auto-reply] product image send failed:', err)
+      }
+    }
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)
   }

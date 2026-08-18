@@ -8,6 +8,7 @@ const h = vi.hoisted(() => ({
   retrieveKnowledge: vi.fn(),
   generateReply: vi.fn(),
   engineSendText: vi.fn(),
+  engineSendMedia: vi.fn(),
   state: {
     conv: null as Record<string, unknown> | null,
     autoResponders: [] as { id: string }[],
@@ -21,7 +22,10 @@ vi.mock('./config', () => ({ loadAiConfig: h.loadAiConfig }))
 vi.mock('./context', () => ({ buildConversationContext: h.buildConversationContext }))
 vi.mock('./knowledge', () => ({ retrieveKnowledge: h.retrieveKnowledge }))
 vi.mock('./generate', () => ({ generateReply: h.generateReply }))
-vi.mock('@/lib/flows/meta-send', () => ({ engineSendText: h.engineSendText }))
+vi.mock('@/lib/flows/meta-send', () => ({
+  engineSendText: h.engineSendText,
+  engineSendMedia: h.engineSendMedia,
+}))
 vi.mock('./admin-client', () => ({
   supabaseAdmin: () => ({
     from: (table: string) => {
@@ -93,9 +97,10 @@ beforeEach(() => {
   h.state.rpcCalls = []
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
-  h.retrieveKnowledge.mockResolvedValue([])
+  h.retrieveKnowledge.mockResolvedValue({ excerpts: [], imageUrl: null })
   h.generateReply.mockResolvedValue({ text: 'Hello!', handoff: false })
   h.engineSendText.mockResolvedValue({ whatsapp_message_id: 'm1' })
+  h.engineSendMedia.mockResolvedValue({ whatsapp_message_id: 'm2' })
 })
 
 describe('dispatchInboundToAiReply — eligibility gates', () => {
@@ -113,11 +118,44 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
   })
 
   it('grounds the reply in retrieved knowledge', async () => {
-    h.retrieveKnowledge.mockResolvedValue(['Returns accepted within 30 days.'])
+    h.retrieveKnowledge.mockResolvedValue({
+      excerpts: ['Returns accepted within 30 days.'],
+      imageUrl: null,
+    })
     await dispatchInboundToAiReply(ARGS)
     expect(h.retrieveKnowledge).toHaveBeenCalled()
     const systemPrompt = h.generateReply.mock.calls[0][0].systemPrompt as string
     expect(systemPrompt).toContain('Returns accepted within 30 days.')
+  })
+
+  it('attaches the grounding document image after the text reply', async () => {
+    h.retrieveKnowledge.mockResolvedValue({
+      excerpts: ['SUV cover, talla M.'],
+      imageUrl: 'https://example.com/suv-m.jpg',
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendMedia).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 'conv-1',
+        kind: 'image',
+        link: 'https://example.com/suv-m.jpg',
+      }),
+    )
+  })
+
+  it('does not attach an image when retrieval found none', async () => {
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendMedia).not.toHaveBeenCalled()
+  })
+
+  it('a failed image send does not throw or undo the text reply', async () => {
+    h.retrieveKnowledge.mockResolvedValue({
+      excerpts: ['SUV cover, talla M.'],
+      imageUrl: 'https://example.com/suv-m.jpg',
+    })
+    h.engineSendMedia.mockRejectedValue(new Error('meta down'))
+    await expect(dispatchInboundToAiReply(ARGS)).resolves.toBeUndefined()
+    expect(h.engineSendText).toHaveBeenCalled()
   })
 
   it('stands down when an active message-level automation exists', async () => {

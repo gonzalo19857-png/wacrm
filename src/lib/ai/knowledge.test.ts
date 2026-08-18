@@ -10,12 +10,14 @@ vi.mock('./embeddings', () => ({
 import { retrieveKnowledge, ingestDocument } from './knowledge'
 
 interface FakeState {
-  semantic: { id: string; content: string }[]
-  fts: { id: string; content: string }[]
+  semantic: { id: string; content: string; document_id?: string }[]
+  fts: { id: string; content: string; document_id?: string }[]
   chunkCount: number
   rpcCalls: string[]
   inserted: Record<string, unknown>[] | null
   deletedFor: string | null
+  /** document_id → image_url, consulted for the top-ranked match. */
+  images: Record<string, string | null>
 }
 
 function makeDb() {
@@ -26,6 +28,7 @@ function makeDb() {
     rpcCalls: [],
     inserted: null,
     deletedFor: null,
+    images: {},
   }
   const db = {
     rpc: (name: string) => {
@@ -36,22 +39,37 @@ function makeDb() {
         return Promise.resolve({ data: state.fts, error: null })
       return Promise.resolve({ data: null, error: null })
     },
-    from: () => ({
-      // retrieveKnowledge's empty-KB count guard.
-      select: () => ({
-        eq: () => Promise.resolve({ count: state.chunkCount, error: null }),
-      }),
-      delete: () => ({
-        eq: (_col: string, val: string) => {
-          state.deletedFor = val
+    from: (table: string) => {
+      if (table === 'ai_knowledge_documents') {
+        return {
+          select: () => ({
+            eq: (_col: string, docId: string) => ({
+              maybeSingle: () =>
+                Promise.resolve({
+                  data: { image_url: state.images[docId] ?? null },
+                  error: null,
+                }),
+            }),
+          }),
+        }
+      }
+      return {
+        // retrieveKnowledge's empty-KB count guard.
+        select: () => ({
+          eq: () => Promise.resolve({ count: state.chunkCount, error: null }),
+        }),
+        delete: () => ({
+          eq: (_col: string, val: string) => {
+            state.deletedFor = val
+            return Promise.resolve({ error: null })
+          },
+        }),
+        insert: (rows: Record<string, unknown>[]) => {
+          state.inserted = rows
           return Promise.resolve({ error: null })
         },
-      }),
-      insert: (rows: Record<string, unknown>[]) => {
-        state.inserted = rows
-        return Promise.resolve({ error: null })
-      },
-    }),
+      }
+    },
   }
   return { db: db as unknown as SupabaseClient, state }
 }
@@ -66,7 +84,9 @@ beforeEach(() => {
 describe('retrieveKnowledge', () => {
   it('returns [] for an empty query without touching the DB', async () => {
     const { db, state } = makeDb()
-    expect(await retrieveKnowledge(db, 'acct', { embeddingsApiKey: null }, '  ')).toEqual([])
+    expect(
+      await retrieveKnowledge(db, 'acct', { embeddingsApiKey: null }, '  '),
+    ).toEqual({ excerpts: [], imageUrl: null })
     expect(state.rpcCalls).toEqual([])
   })
 
@@ -74,16 +94,16 @@ describe('retrieveKnowledge', () => {
     const { db, state } = makeDb()
     state.chunkCount = 0
     const out = await retrieveKnowledge(db, 'acct', { embeddingsApiKey: 'sk-x' }, 'q')
-    expect(out).toEqual([])
+    expect(out).toEqual({ excerpts: [], imageUrl: null })
     expect(h.embedTexts).not.toHaveBeenCalled()
     expect(state.rpcCalls).toEqual([])
   })
 
   it('uses lexical FTS only when there is no embeddings key', async () => {
     const { db, state } = makeDb()
-    state.fts = [{ id: 'f1', content: 'F1' }]
+    state.fts = [{ id: 'f1', content: 'F1', document_id: 'doc-f1' }]
     const out = await retrieveKnowledge(db, 'acct', { embeddingsApiKey: null }, 'q')
-    expect(out).toEqual(['F1'])
+    expect(out).toEqual({ excerpts: ['F1'], imageUrl: null })
     expect(state.rpcCalls).toEqual(['match_ai_knowledge_fts'])
     expect(h.embedTexts).not.toHaveBeenCalled()
   })
@@ -91,12 +111,12 @@ describe('retrieveKnowledge', () => {
   it('uses semantic search when an embeddings key is present', async () => {
     const { db, state } = makeDb()
     state.semantic = [
-      { id: 's1', content: 'S1' },
-      { id: 's2', content: 'S2' },
-      { id: 's3', content: 'S3' },
+      { id: 's1', content: 'S1', document_id: 'doc-s1' },
+      { id: 's2', content: 'S2', document_id: 'doc-s2' },
+      { id: 's3', content: 'S3', document_id: 'doc-s3' },
     ]
     const out = await retrieveKnowledge(db, 'acct', { embeddingsApiKey: 'sk-x' }, 'q', 3)
-    expect(out).toEqual(['S1', 'S2', 'S3'])
+    expect(out).toEqual({ excerpts: ['S1', 'S2', 'S3'], imageUrl: null })
     expect(h.embedTexts).toHaveBeenCalledTimes(1)
     // Enough semantic hits → no FTS top-up.
     expect(state.rpcCalls).toEqual(['match_ai_knowledge_semantic'])
@@ -105,19 +125,37 @@ describe('retrieveKnowledge', () => {
   it('tops up with FTS and dedupes when semantic is short', async () => {
     const { db, state } = makeDb()
     state.semantic = [
-      { id: 's1', content: 'S1' },
-      { id: 's2', content: 'S2' },
+      { id: 's1', content: 'S1', document_id: 'doc-s1' },
+      { id: 's2', content: 'S2', document_id: 'doc-s2' },
     ]
     state.fts = [
-      { id: 's2', content: 'S2-dup' }, // dedup by id
-      { id: 'f1', content: 'F1' },
+      { id: 's2', content: 'S2-dup', document_id: 'doc-s2' }, // dedup by id
+      { id: 'f1', content: 'F1', document_id: 'doc-f1' },
     ]
     const out = await retrieveKnowledge(db, 'acct', { embeddingsApiKey: 'sk-x' }, 'q', 3)
-    expect(out).toEqual(['S1', 'S2', 'F1'])
+    expect(out).toEqual({ excerpts: ['S1', 'S2', 'F1'], imageUrl: null })
     expect(state.rpcCalls).toEqual([
       'match_ai_knowledge_semantic',
       'match_ai_knowledge_fts',
     ])
+  })
+
+  it('resolves the top-ranked match\'s document image', async () => {
+    const { db, state } = makeDb()
+    state.semantic = [{ id: 's1', content: 'S1', document_id: 'doc-s1' }]
+    state.images['doc-s1'] = 'https://example.com/suv.jpg'
+    const out = await retrieveKnowledge(db, 'acct', { embeddingsApiKey: 'sk-x' }, 'q')
+    expect(out).toEqual({
+      excerpts: ['S1'],
+      imageUrl: 'https://example.com/suv.jpg',
+    })
+  })
+
+  it('leaves imageUrl null when the top document has none set', async () => {
+    const { db, state } = makeDb()
+    state.semantic = [{ id: 's1', content: 'S1', document_id: 'doc-s1' }]
+    const out = await retrieveKnowledge(db, 'acct', { embeddingsApiKey: 'sk-x' }, 'q')
+    expect(out.imageUrl).toBeNull()
   })
 })
 

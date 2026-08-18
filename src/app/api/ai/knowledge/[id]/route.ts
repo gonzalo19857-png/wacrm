@@ -20,7 +20,7 @@ export async function GET(_request: Request, { params }: Params) {
     const { id } = await params
     const { data, error } = await supabase
       .from('ai_knowledge_documents')
-      .select('id, title, content, updated_at')
+      .select('id, title, content, image_url, updated_at')
       .eq('account_id', accountId)
       .eq('id', id)
       .maybeSingle()
@@ -49,7 +49,14 @@ export async function PATCH(request: Request, { params }: Params) {
     const body = await request.json().catch(() => null)
     const title = typeof body?.title === 'string' ? body.title.trim() : undefined
     const content = typeof body?.content === 'string' ? body.content.trim() : undefined
-    if (title === undefined && content === undefined) {
+    // undefined = leave unchanged; '' (or omitted) = clear; text = set.
+    const imageUrl =
+      'image_url' in (body ?? {})
+        ? typeof body.image_url === 'string' && body.image_url.trim()
+          ? body.image_url.trim()
+          : null
+        : undefined
+    if (title === undefined && content === undefined && imageUrl === undefined) {
       return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
     }
     if (title !== undefined && !title) {
@@ -59,9 +66,10 @@ export async function PATCH(request: Request, { params }: Params) {
       return NextResponse.json({ error: 'content cannot be empty' }, { status: 400 })
     }
 
-    const update: Record<string, string> = {}
+    const update: Record<string, string | null> = {}
     if (title !== undefined) update.title = title
     if (content !== undefined) update.content = content
+    if (imageUrl !== undefined) update.image_url = imageUrl
 
     const { data: updated, error } = await supabase
       .from('ai_knowledge_documents')
