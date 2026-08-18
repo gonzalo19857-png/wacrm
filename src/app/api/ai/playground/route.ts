@@ -2,10 +2,9 @@ import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { loadAiConfig } from '@/lib/ai/config'
-import { retrieveKnowledge } from '@/lib/ai/knowledge'
+import { retrieveKnowledgeForMessages } from '@/lib/ai/knowledge'
 import { generateReply } from '@/lib/ai/generate'
 import { buildSystemPrompt } from '@/lib/ai/defaults'
-import { latestUserMessage } from '@/lib/ai/query'
 import { AiError, type ChatMessage } from '@/lib/ai/types'
 
 // Keep the tested transcript bounded, mirroring the live context window.
@@ -72,11 +71,11 @@ export async function POST(request: Request) {
       )
     }
 
-    const { excerpts: knowledge } = await retrieveKnowledge(
+    const { excerpts: knowledge } = await retrieveKnowledgeForMessages(
       supabase,
       accountId,
       config,
-      latestUserMessage(messages),
+      messages,
     )
     const systemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,

@@ -26,3 +26,22 @@ export function latestUserMessage(
   if (userTurns.length > 0) return userTurns.map((m) => m.content).join('\n')
   return messages.length > 0 ? messages[messages.length - 1].content : ''
 }
+
+/**
+ * Retrieval query candidates, most-specific first: the single latest
+ * customer turn, then (only if that differs) the last few turns joined.
+ *
+ * Querying with the latest turn ALONE first matters as much as having
+ * the wider window available: once a customer names a vehicle, that
+ * vehicle's words dominate the joined query for the next turn or two,
+ * so if they then name a DIFFERENT vehicle, the join can out-rank it
+ * with the stale one and retrieval keeps grounding the reply — and the
+ * image it attaches — in the wrong product. Trying the latest turn on
+ * its own avoids that; the join is only a fallback for a turn with no
+ * keywords of its own (e.g. "alguna imagen?").
+ */
+export function retrievalQueryCandidates(messages: ChatMessage[]): string[] {
+  const latest = latestUserMessage(messages, 1)
+  const widened = latestUserMessage(messages, DEFAULT_WINDOW)
+  return latest === widened ? [latest] : [latest, widened]
+}

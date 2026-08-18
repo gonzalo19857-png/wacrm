@@ -1,7 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { AiConfig } from './types'
+import type { AiConfig, ChatMessage } from './types'
 import { chunkText } from './chunk'
 import { embedTexts, toVectorLiteral } from './embeddings'
+import { retrievalQueryCandidates } from './query'
 
 // ============================================================
 // Knowledge base: ingest (chunk + optionally embed) and hybrid
@@ -182,4 +183,26 @@ export async function retrieveKnowledge(
   }
 
   return { excerpts, imageUrl }
+}
+
+/**
+ * `retrieveKnowledge`, but choosing the query from the conversation
+ * itself: tries the latest customer turn alone first, and only widens
+ * to the last few turns if that alone comes up empty. See
+ * `retrievalQueryCandidates` for why the order matters — querying with
+ * a stale multi-turn window first can out-rank a customer's brand-new
+ * topic with an older one still lingering in the join.
+ */
+export async function retrieveKnowledgeForMessages(
+  db: SupabaseClient,
+  accountId: string,
+  config: Pick<AiConfig, 'embeddingsApiKey'>,
+  messages: ChatMessage[],
+  k = 5,
+): Promise<KnowledgeResult> {
+  for (const query of retrievalQueryCandidates(messages)) {
+    const result = await retrieveKnowledge(db, accountId, config, query, k)
+    if (result.excerpts.length > 0) return result
+  }
+  return { excerpts: [], imageUrl: null }
 }

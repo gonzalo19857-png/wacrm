@@ -7,7 +7,7 @@ vi.mock('./embeddings', () => ({
   toVectorLiteral: (v: number[]) => `[${v.join(',')}]`,
 }))
 
-import { retrieveKnowledge, ingestDocument } from './knowledge'
+import { retrieveKnowledge, retrieveKnowledgeForMessages, ingestDocument } from './knowledge'
 
 interface FakeState {
   semantic: { id: string; content: string; document_id?: string }[]
@@ -156,6 +156,55 @@ describe('retrieveKnowledge', () => {
     state.semantic = [{ id: 's1', content: 'S1', document_id: 'doc-s1' }]
     const out = await retrieveKnowledge(db, 'acct', { embeddingsApiKey: 'sk-x' }, 'q')
     expect(out.imageUrl).toBeNull()
+  })
+})
+
+describe('retrieveKnowledgeForMessages', () => {
+  // A query-aware db: FTS results depend on which candidate query was
+  // sent, so the fallback-to-widened-window behavior is observable.
+  function makeQueryAwareDb(byQuery: Record<string, { id: string; content: string; document_id: string }[]>) {
+    return {
+      from: () => ({
+        select: () => ({ eq: () => Promise.resolve({ count: 1, error: null }) }),
+      }),
+      rpc: (name: string, args: { p_query: string }) => {
+        if (name === 'match_ai_knowledge_fts') {
+          return Promise.resolve({ data: byQuery[args.p_query] ?? [], error: null })
+        }
+        return Promise.resolve({ data: null, error: null })
+      },
+    } as unknown as SupabaseClient
+  }
+
+  it('uses the latest-turn result when it finds something', async () => {
+    const db = makeQueryAwareDb({
+      'Toyota Yaris 2019': [{ id: 'c1', content: 'Sedán match', document_id: 'doc-sedan' }],
+    })
+    const messages = [
+      { role: 'user' as const, content: 'Hyundai Tucson' },
+      { role: 'user' as const, content: 'Toyota Yaris 2019' },
+    ]
+    const out = await retrieveKnowledgeForMessages(db, 'acct', { embeddingsApiKey: null }, messages)
+    expect(out.excerpts).toEqual(['Sedán match'])
+  })
+
+  it('falls back to the widened window when the latest turn alone finds nothing', async () => {
+    const db = makeQueryAwareDb({
+      'Hyundai Tucson\nAlguna imagen?': [{ id: 'c1', content: 'SUV match', document_id: 'doc-suv' }],
+    })
+    const messages = [
+      { role: 'user' as const, content: 'Hyundai Tucson' },
+      { role: 'user' as const, content: 'Alguna imagen?' },
+    ]
+    const out = await retrieveKnowledgeForMessages(db, 'acct', { embeddingsApiKey: null }, messages)
+    expect(out.excerpts).toEqual(['SUV match'])
+  })
+
+  it('returns empty when neither candidate finds anything', async () => {
+    const db = makeQueryAwareDb({})
+    const messages = [{ role: 'user' as const, content: 'hola' }]
+    const out = await retrieveKnowledgeForMessages(db, 'acct', { embeddingsApiKey: null }, messages)
+    expect(out).toEqual({ excerpts: [], imageUrl: null })
   })
 })
 
