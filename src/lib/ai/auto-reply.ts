@@ -179,19 +179,23 @@ export async function dispatchInboundToAiReply(
     }
     if (claimed !== true) return // lost the per-conversation cap race
 
-    await engineSendText({
-      accountId,
-      userId: configOwnerUserId,
-      conversationId,
-      contactId,
-      text,
-      aiGenerated: true,
-    })
+    const sendText = () =>
+      engineSendText({
+        accountId,
+        userId: configOwnerUserId,
+        conversationId,
+        contactId,
+        text,
+        aiGenerated: true,
+      })
 
-    // Best-effort product photo: providers are text-only, so this is
-    // the only way a picture reaches the customer without a human.
-    // Never let a failed/slow media send undo the text already sent.
-    if (imageUrl) {
+    // Product photo: providers are text-only, so this is the only way a
+    // picture reaches the customer without a human. Sent as ONE message
+    // — the image with the reply as its caption — rather than two, so
+    // the recommendation and the photo land together. Meta caps image
+    // captions at 1024 chars; on the rare reply that runs longer, skip
+    // the image rather than risk the send failing outright.
+    if (imageUrl && text.length <= 1024) {
       try {
         await engineSendMedia({
           accountId,
@@ -200,10 +204,18 @@ export async function dispatchInboundToAiReply(
           contactId,
           kind: 'image',
           link: imageUrl,
+          caption: text,
+          aiGenerated: true,
         })
       } catch (err) {
-        console.error('[ai auto-reply] product image send failed:', err)
+        console.error(
+          '[ai auto-reply] image+caption send failed, falling back to text-only:',
+          err,
+        )
+        await sendText()
       }
+    } else {
+      await sendText()
     }
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)

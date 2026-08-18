@@ -128,7 +128,7 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     expect(systemPrompt).toContain('Returns accepted within 30 days.')
   })
 
-  it('attaches the grounding document image after the text reply', async () => {
+  it('sends the reply as an image with the text as its caption, in one message', async () => {
     h.retrieveKnowledge.mockResolvedValue({
       excerpts: ['SUV cover, talla M.'],
       imageUrl: 'https://example.com/suv-m.jpg',
@@ -139,16 +139,30 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
         conversationId: 'conv-1',
         kind: 'image',
         link: 'https://example.com/suv-m.jpg',
+        caption: 'Hello!',
       }),
     )
+    expect(h.engineSendText).not.toHaveBeenCalled()
   })
 
-  it('does not attach an image when retrieval found none', async () => {
+  it('sends plain text when retrieval found no image', async () => {
     await dispatchInboundToAiReply(ARGS)
     expect(h.engineSendMedia).not.toHaveBeenCalled()
+    expect(h.engineSendText).toHaveBeenCalled()
   })
 
-  it('a failed image send does not throw or undo the text reply', async () => {
+  it('falls back to a text-only send when the caption exceeds 1024 chars', async () => {
+    h.retrieveKnowledge.mockResolvedValue({
+      excerpts: ['SUV cover, talla M.'],
+      imageUrl: 'https://example.com/suv-m.jpg',
+    })
+    h.generateReply.mockResolvedValue({ text: 'x'.repeat(1025), handoff: false })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendMedia).not.toHaveBeenCalled()
+    expect(h.engineSendText).toHaveBeenCalled()
+  })
+
+  it('a failed image send falls back to a text-only send', async () => {
     h.retrieveKnowledge.mockResolvedValue({
       excerpts: ['SUV cover, talla M.'],
       imageUrl: 'https://example.com/suv-m.jpg',
