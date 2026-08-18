@@ -26,8 +26,13 @@ export const AI_PROVIDER_DEFAULT_MODEL: Record<AiProvider, string> = {
 export const HANDOFF_SENTINEL = '[[HANDOFF]]'
 
 /** Cap on generated reply length — keeps WhatsApp replies short and
- *  bounds token spend on the caller's own key. */
-export const MAX_OUTPUT_TOKENS = 1024
+ *  bounds token spend on the caller's own key. Reasoning models (e.g.
+ *  OpenRouter's `deepseek/deepseek-*-flash`) spend part of this budget
+ *  on an internal `reasoning` field before writing `content`; too low a
+ *  cap lets them exhaust it mid-thought, leaving `content` empty and
+ *  the reply silently dropped (see `generateOpenRouter`'s empty-response
+ *  check). Sized with headroom for that, not just the visible reply. */
+export const MAX_OUTPUT_TOKENS = 2048
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
 const DEFAULT_CONTEXT_MESSAGE_LIMIT = 20
