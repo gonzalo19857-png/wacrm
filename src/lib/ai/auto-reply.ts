@@ -119,11 +119,11 @@ export async function dispatchInboundToAiReply(
     // sees carries no timestamps).
     const limaHour = new Date(Date.now() - 5 * 60 * 60 * 1000).getUTCHours()
     const greetingHint =
-      limaHour < 12
+      limaHour >= 5 && limaHour < 12
         ? 'Es de mañana en Perú — el saludo correcto es "Buenos días".'
-        : limaHour < 19
+        : limaHour >= 12 && limaHour < 19
           ? 'Es de tarde en Perú — el saludo correcto es "Buenas tardes".'
-          : 'Es de noche en Perú — el saludo correcto es "Buenas noches".'
+          : 'Es de noche/madrugada en Perú — el saludo correcto es "Buenas noches".'
     const userPromptWithTime = config.systemPrompt
       ? `${config.systemPrompt}\n\n${greetingHint}`
       : greetingHint
