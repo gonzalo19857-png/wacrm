@@ -37,6 +37,15 @@ describe('enforceWhatsAppEmphasis', () => {
     expect(enforceWhatsAppEmphasis(text)).toBe(text)
   })
 
+  it('leaves an odd non-standard size label alone rather than corrupting it', () => {
+    // Reproduces a real model slip: conflating the category into the
+    // size code. A loose regex here wrapped only "SUV", leaving the
+    // model's own asterisk and "-L" dangling as visible junk —
+    // "*talla SUV*-L*". Matching nothing at all is the safe outcome.
+    const odd = 'Para su Nissan Kicks recomendamos la *talla SUV-L* 😊'
+    expect(enforceWhatsAppEmphasis(odd)).toBe(odd)
+  })
+
   it('handles empty string', () => {
     expect(enforceWhatsAppEmphasis('')).toBe('')
   })

@@ -16,9 +16,16 @@
 export function enforceWhatsAppEmphasis(text: string): string {
   let out = text
 
-  // "talla M" / "*talla M*" -> "*talla M*" (also XL, XXL, XXXL, etc.)
+  // "talla M" / "*talla M*" -> "*talla M*" (also L, XL, XXL, XXXL).
+  // Deliberately an allowlist of the real size codes rather than "any
+  // word after talla": the model occasionally writes something odd
+  // like "talla SUV-L" (conflating the category into the size), and a
+  // loose \w+ capture would only wrap "SUV" — leaving the model's own
+  // asterisk and the "-L" dangling as literal, visibly broken text.
+  // Matching nothing (leaving the model's original wording alone) is
+  // the safe failure mode; a partial, corrupted wrap is not.
   out = out.replace(
-    /\*?\btalla\s+([A-Za-zñÑ0-9]{1,6})\b\*?/gi,
+    /\*?\btalla\s+(XXXL|XXL|XL|M|L)\b\*?/gi,
     (_match, code: string) => `*talla ${code}*`,
   )
 
