@@ -53,4 +53,28 @@ describe('retrievalQueryCandidates', () => {
     const messages = [{ role: 'user' as const, content: 'Toyota Yaris 2019' }]
     expect(retrievalQueryCandidates(messages)).toEqual(['Toyota Yaris 2019'])
   })
+
+  it('does not widen once a talla has already been recommended', () => {
+    const messages = [
+      { role: 'user' as const, content: 'Hyundai Tucson 2019' },
+      {
+        role: 'assistant' as const,
+        content: 'Para su Hyundai Tucson recomendamos la *talla L* 😊',
+      },
+      { role: 'user' as const, content: 'Lima' },
+    ]
+    expect(retrievalQueryCandidates(messages)).toEqual(['Lima'])
+  })
+
+  it('still widens before any talla has been recommended', () => {
+    const messages = [
+      { role: 'user' as const, content: 'Hyundai Tucson' },
+      { role: 'assistant' as const, content: '¿Para qué vehículo sería?' },
+      { role: 'user' as const, content: '2019' },
+    ]
+    expect(retrievalQueryCandidates(messages)).toEqual([
+      '2019',
+      'Hyundai Tucson\n2019',
+    ])
+  })
 })
