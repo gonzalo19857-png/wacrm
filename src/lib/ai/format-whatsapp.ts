@@ -40,3 +40,43 @@ export function enforceWhatsAppEmphasis(text: string): string {
 
   return out
 }
+
+const FEATURES_HEADER = '¿Por qué elegir nuestro cobertor?'
+
+/**
+ * Strips a re-stated talla/price/features recommendation block from a
+ * follow-up reply, keeping only whatever new content follows it.
+ *
+ * The prompt tells the model, in several places, to give this block
+ * only once per vehicle and answer follow-ups (location, questions)
+ * with just the new information — but that instruction doesn't reliably
+ * hold: observed live, a bare "Lima" reply after the talla had already
+ * been given got a reply that opened with the *entire* recommendation
+ * again (re-typed from the model's own earlier turn, not sourced from
+ * retrieved knowledge — so narrowing retrieval doesn't fix it) before
+ * finally getting to the actual follow-up content. Since the features
+ * block is specified to be copied verbatim every time, its presence in
+ * both an earlier assistant turn and the new reply is an unambiguous
+ * signal of this exact failure — safe to strip mechanically rather than
+ * hope the model complies.
+ */
+export function stripRepeatedRecommendation(
+  text: string,
+  priorAssistantMessages: string[],
+): string {
+  if (!text.includes(FEATURES_HEADER)) return text
+  const alreadyGiven = priorAssistantMessages.some((m) =>
+    m.includes(FEATURES_HEADER),
+  )
+  if (!alreadyGiven) return text
+
+  const headerIdx = text.indexOf(FEATURES_HEADER)
+  const afterHeader = text.slice(headerIdx + FEATURES_HEADER.length)
+  const blankLine = afterHeader.match(/\n\s*\n/)
+  if (!blankLine || blankLine.index === undefined) return text
+
+  const remainder = afterHeader
+    .slice(blankLine.index + blankLine[0].length)
+    .trim()
+  return remainder.length > 0 ? remainder : text
+}

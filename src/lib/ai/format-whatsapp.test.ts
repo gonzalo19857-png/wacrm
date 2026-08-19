@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { enforceWhatsAppEmphasis } from './format-whatsapp'
+import {
+  enforceWhatsAppEmphasis,
+  stripRepeatedRecommendation,
+} from './format-whatsapp'
 
 describe('enforceWhatsAppEmphasis', () => {
   it('bolds an unbolded talla and price', () => {
@@ -48,5 +51,57 @@ describe('enforceWhatsAppEmphasis', () => {
 
   it('handles empty string', () => {
     expect(enforceWhatsAppEmphasis('')).toBe('')
+  })
+})
+
+describe('stripRepeatedRecommendation', () => {
+  const recommendation =
+    'Para su Toyota Corolla 2018 recomendamos la *talla L* 😊\n' +
+    'Precio: *S/129.90* 🎁\n\n' +
+    '¿Por qué elegir nuestro cobertor? 🙌\n' +
+    '✅ Doble Capa de Protección...\n' +
+    '✅ Diseño Funcional...\n\n' +
+    '¿En qué parte se encuentra? ¿Lima o provincia? 🙏'
+
+  it('strips a re-stated recommendation, keeping only the new content', () => {
+    const repeated =
+      'Perfecto, ' +
+      'para su Toyota Corolla recomendamos la *talla L* 😊\n' +
+      'Precio: *S/129.90* 🎁\n\n' +
+      '¿Por qué elegir nuestro cobertor? 🙌\n' +
+      '✅ Doble Capa de Protección...\n' +
+      '✅ Diseño Funcional...\n\n' +
+      'Perfecto, en breve un asesor te contactará para coordinar tu pedido 🙌'
+
+    expect(stripRepeatedRecommendation(repeated, [recommendation])).toBe(
+      'Perfecto, en breve un asesor te contactará para coordinar tu pedido 🙌',
+    )
+  })
+
+  it('is a no-op when the reply has no features block at all', () => {
+    const text = '¿Para qué parte de Lima sería, estimado?'
+    expect(stripRepeatedRecommendation(text, [recommendation])).toBe(text)
+  })
+
+  it('is a no-op the first time the features block is given (nothing prior to repeat)', () => {
+    expect(stripRepeatedRecommendation(recommendation, [])).toBe(
+      recommendation,
+    )
+  })
+
+  it('is a no-op when it cannot find a blank line after the features block (unsafe to strip)', () => {
+    const noBlankLine =
+      '¿Por qué elegir nuestro cobertor? 🙌\n✅ Doble Capa de Protección...'
+    expect(
+      stripRepeatedRecommendation(noBlankLine, [recommendation]),
+    ).toBe(noBlankLine)
+  })
+
+  it('falls back to the full text if stripping would leave nothing', () => {
+    const trailingOnly =
+      '¿Por qué elegir nuestro cobertor? 🙌\n✅ Doble Capa de Protección...\n\n   '
+    expect(
+      stripRepeatedRecommendation(trailingOnly, [recommendation]),
+    ).toBe(trailingOnly)
   })
 })

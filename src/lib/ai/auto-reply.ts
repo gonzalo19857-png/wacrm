@@ -5,7 +5,10 @@ import { retrieveKnowledgeForMessages } from './knowledge'
 import { generateReply } from './generate'
 import { buildSystemPrompt } from './defaults'
 import { buildHandoffSummary } from './handoff'
-import { enforceWhatsAppEmphasis } from './format-whatsapp'
+import {
+  enforceWhatsAppEmphasis,
+  stripRepeatedRecommendation,
+} from './format-whatsapp'
 import { getProductImage } from './product-images'
 import { logAiUsage } from './usage'
 import { engineSendText, engineSendMedia } from '@/lib/flows/meta-send'
@@ -136,10 +139,22 @@ export async function dispatchInboundToAiReply(
       systemPrompt,
       messages,
     })
+    // Strip a re-stated talla/price/features block before formatting —
+    // prompting alone doesn't reliably stop the model from re-typing
+    // its own earlier recommendation on a follow-up turn (observed
+    // live on a bare "Lima" reply). No-op unless that exact block was
+    // already sent earlier in this conversation.
+    const priorAssistantMessages = messages
+      .filter((m) => m.role === 'assistant')
+      .map((m) => m.content)
+    const dedupedText = stripRepeatedRecommendation(
+      rawText,
+      priorAssistantMessages,
+    )
     // Enforce bold talla/price + spacing deterministically — prompting
     // alone gets it right only some of the time. No-op on text that
     // doesn't mention a talla or an S/ price.
-    const text = enforceWhatsAppEmphasis(rawText)
+    const text = enforceWhatsAppEmphasis(dedupedText)
 
     // Record token spend on the account's BYO key. Fire-and-forget so it
     // never adds latency to the customer-facing send: `logAiUsage`
