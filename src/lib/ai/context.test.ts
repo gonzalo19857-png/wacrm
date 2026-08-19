@@ -3,12 +3,13 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { buildConversationContext } from './context'
 
 /** Minimal fake matching the query chain in buildConversationContext:
- *  from().select().eq().eq().order().limit() → { data, error }. */
+ *  from().select().eq().in().order().limit() → { data, error }. */
 function fakeDb(rows: unknown[]): SupabaseClient {
   const chain = {
     from: () => chain,
     select: () => chain,
     eq: () => chain,
+    in: () => chain,
     order: () => chain,
     limit: () => Promise.resolve({ data: rows, error: null }),
   }
@@ -37,6 +38,29 @@ describe('buildConversationContext', () => {
       'conv-1',
     )
     expect(out).toEqual([{ role: 'assistant', content: 'auto reply' }])
+  })
+
+  it('queries both text and image content types, never just text', async () => {
+    // Regression test: an earlier version filtered to content_type
+    // 'text' only, which silently dropped the bot's own image+caption
+    // recommendation from context on every later turn (auto-reply
+    // sends the talla/price recommendation as one image message when
+    // it attaches a product photo) — the model then had no memory of
+    // having already answered and re-stated the same recommendation.
+    let queriedTypes: unknown
+    const chain = {
+      from: () => chain,
+      select: () => chain,
+      eq: () => chain,
+      in: (column: string, values: unknown) => {
+        if (column === 'content_type') queriedTypes = values
+        return chain
+      },
+      order: () => chain,
+      limit: () => Promise.resolve({ data: [], error: null }),
+    }
+    await buildConversationContext(chain as unknown as SupabaseClient, 'conv-1')
+    expect(queriedTypes).toEqual(expect.arrayContaining(['text', 'image']))
   })
 
   it('drops empty / whitespace-only messages', async () => {
