@@ -96,6 +96,18 @@ describe('parseGeneration', () => {
       usage: null,
     })
   })
+
+  it('strips every image sentinel occurrence, not just the first', () => {
+    // Regression: a non-global replace() only strips the first match —
+    // if the model repeats the tag (e.g. once per vehicle across a
+    // multi-vehicle reply), the rest leaked into the customer-visible
+    // text as literal "[[IMAGE:...]]".
+    const result = parseGeneration(
+      'Mototaxi: talla única[[IMAGE:mototaxi-torito]]\n\nSedán: talla M [[IMAGE:sedan-m]]',
+    )
+    expect(result.text).toBe('Mototaxi: talla única\n\nSedán: talla M')
+    expect(result.imageKey).toBe('mototaxi-torito')
+  })
 })
 
 describe('generateReply — OpenAI', () => {
