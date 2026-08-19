@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Bot, RotateCcw, Send, Loader2, UserCircle2, ArrowRight } from 'lucide-react';
+import { Bot, RotateCcw, Send, Loader2, UserCircle2, ArrowRight, EyeOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 
@@ -11,6 +11,8 @@ interface Turn {
   content: string;
   /** assistant-only: the agent signalled a human handoff on this turn. */
   handoff?: boolean;
+  /** assistant-only: the agent chose to stay silent on this turn. */
+  noReply?: boolean;
 }
 
 export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
@@ -61,6 +63,7 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
               ? data.reply
               : '',
           handoff: Boolean(data.handoff),
+          noReply: Boolean(data.noReply),
         },
       ]);
     } catch {
@@ -153,6 +156,17 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
                 >
                   <UserCircle2 className="h-3.5 w-3.5" />
                   Would hand off to a human here
+                </p>
+              )}
+              {t.role === 'assistant' && t.noReply && (
+                <p
+                  className={cn(
+                    'flex items-center gap-1 text-xs text-muted-foreground',
+                    t.content && 'mt-1.5 border-t border-border/50 pt-1.5',
+                  )}
+                >
+                  <EyeOff className="h-3.5 w-3.5" />
+                  Would stay silent here (no human involved)
                 </p>
               )}
             </div>

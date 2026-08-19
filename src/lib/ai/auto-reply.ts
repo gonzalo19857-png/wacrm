@@ -134,7 +134,7 @@ export async function dispatchInboundToAiReply(
       knowledge,
     })
 
-    const { text: rawText, handoff, imageKey, usage } = await generateReply({
+    const { text: rawText, handoff, noReply, imageKey, usage } = await generateReply({
       config,
       systemPrompt,
       messages,
@@ -169,6 +169,15 @@ export async function dispatchInboundToAiReply(
       model: config.model,
       usage,
     })
+
+    if (noReply) {
+      // The model chose to simply stay quiet this turn (e.g. the
+      // customer closed out with no new question) — no message, no
+      // human handoff, no auto-reply state change. Unlike a handoff,
+      // the bot stays fully active for whatever the customer sends
+      // next, so there's nothing else to do here.
+      return
+    }
 
     if (handoff || !text) {
       // The model can't (or shouldn't) answer — stop auto-replying on

@@ -5,6 +5,10 @@ import { loadAiConfig } from '@/lib/ai/config'
 import { retrieveKnowledgeForMessages } from '@/lib/ai/knowledge'
 import { generateReply } from '@/lib/ai/generate'
 import { buildSystemPrompt } from '@/lib/ai/defaults'
+import {
+  enforceWhatsAppEmphasis,
+  stripRepeatedRecommendation,
+} from '@/lib/ai/format-whatsapp'
 import { AiError, type ChatMessage } from '@/lib/ai/types'
 
 // Keep the tested transcript bounded, mirroring the live context window.
@@ -83,8 +87,21 @@ export async function POST(request: Request) {
       knowledge,
     })
 
-    const { text, handoff } = await generateReply({ config, systemPrompt, messages })
-    return NextResponse.json({ reply: text, handoff })
+    const { text: rawText, handoff, noReply } = await generateReply({
+      config,
+      systemPrompt,
+      messages,
+    })
+    // Mirror the auto-reply bot's deterministic post-processing so the
+    // playground shows exactly what a real customer would get, not just
+    // the raw model output.
+    const priorAssistantMessages = messages
+      .filter((m) => m.role === 'assistant')
+      .map((m) => m.content)
+    const text = enforceWhatsAppEmphasis(
+      stripRepeatedRecommendation(rawText, priorAssistantMessages),
+    )
+    return NextResponse.json({ reply: text, handoff, noReply })
   } catch (err) {
     if (err instanceof AiError) {
       return NextResponse.json(

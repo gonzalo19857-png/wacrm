@@ -292,3 +292,16 @@ describe('dispatchInboundToAiReply — handoff', () => {
     })
   })
 })
+
+describe('dispatchInboundToAiReply — no-reply', () => {
+  it('sends nothing and leaves the conversation untouched on [[NOREPLY]]', async () => {
+    h.generateReply.mockResolvedValue({ text: '', handoff: false, noReply: true })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.engineSendMedia).not.toHaveBeenCalled()
+    // Unlike a handoff: no reply slot claimed, no conversation update —
+    // the bot stays fully active for the customer's next message.
+    expect(h.state.rpcCalls).toHaveLength(0)
+    expect(h.state.updatePayload).toBeNull()
+  })
+})

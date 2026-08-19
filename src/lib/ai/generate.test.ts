@@ -43,6 +43,7 @@ describe('parseGeneration', () => {
     expect(parseGeneration('Hello there')).toEqual({
       text: 'Hello there',
       handoff: false,
+      noReply: false,
       imageKey: null,
       usage: null,
     })
@@ -52,12 +53,24 @@ describe('parseGeneration', () => {
     expect(parseGeneration('[[HANDOFF]]')).toEqual({
       text: '',
       handoff: true,
+      noReply: false,
       imageKey: null,
       usage: null,
     })
     expect(parseGeneration('Let me get a human [[HANDOFF]]')).toEqual({
       text: 'Let me get a human',
       handoff: true,
+      noReply: false,
+      imageKey: null,
+      usage: null,
+    })
+  })
+
+  it('detects + strips the no-reply sentinel', () => {
+    expect(parseGeneration('[[NOREPLY]]')).toEqual({
+      text: '',
+      handoff: false,
+      noReply: true,
       imageKey: null,
       usage: null,
     })
@@ -68,6 +81,7 @@ describe('parseGeneration', () => {
     expect(parseGeneration('Hi', usage)).toEqual({
       text: 'Hi',
       handoff: false,
+      noReply: false,
       imageKey: null,
       usage,
     })
@@ -77,6 +91,7 @@ describe('parseGeneration', () => {
     expect(parseGeneration('Para su auto la talla L [[IMAGE:sedan-l]]')).toEqual({
       text: 'Para su auto la talla L',
       handoff: false,
+      noReply: false,
       imageKey: 'sedan-l',
       usage: null,
     })
@@ -102,6 +117,7 @@ describe('generateReply — OpenAI', () => {
     expect(res).toEqual({
       text: 'Sure — happy to help!',
       handoff: false,
+      noReply: false,
       imageKey: null,
       usage: { promptTokens: 42, completionTokens: 8, totalTokens: 50 },
     })
@@ -162,6 +178,7 @@ describe('generateReply — Anthropic', () => {
     expect(res).toEqual({
       text: 'Hi there!',
       handoff: false,
+      noReply: false,
       imageKey: null,
       usage: { promptTokens: 30, completionTokens: 6, totalTokens: 36 },
     })
@@ -227,6 +244,7 @@ describe('generateReply — OpenRouter', () => {
     expect(res).toEqual({
       text: 'Sure — happy to help!',
       handoff: false,
+      noReply: false,
       imageKey: null,
       usage: { promptTokens: 42, completionTokens: 8, totalTokens: 50 },
     })

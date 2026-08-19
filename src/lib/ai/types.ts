@@ -60,6 +60,9 @@ export interface GenerateResult {
   text: string
   /** True when the model asked to hand off to a human (auto-reply mode). */
   handoff: boolean
+  /** True when the model asked to simply skip replying this turn — no
+   *  human handoff, no auto-reply state change (auto-reply mode). */
+  noReply: boolean
   /** The key from a `[[IMAGE:<key>]]` sentinel, or null if the model
    *  didn't request a specific product image. */
   imageKey: string | null

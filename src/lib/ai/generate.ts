@@ -5,7 +5,12 @@ import {
   type ChatMessage,
   type GenerateResult,
 } from './types'
-import { HANDOFF_SENTINEL, IMAGE_SENTINEL_REGEX, aiRequestTimeoutMs } from './defaults'
+import {
+  HANDOFF_SENTINEL,
+  IMAGE_SENTINEL_REGEX,
+  NOREPLY_SENTINEL,
+  aiRequestTimeoutMs,
+} from './defaults'
 import { generateOpenAi } from './providers/openai'
 import { generateAnthropic } from './providers/anthropic'
 import { generateOpenRouter } from './providers/openrouter'
@@ -56,9 +61,10 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
 }
 
 /**
- * Split the raw model output into `{ text, handoff, imageKey, usage }`.
- * The handoff sentinel can appear alone or trailing a partial reply;
- * either way we treat the turn as a handoff and strip the marker from
+ * Split the raw model output into
+ * `{ text, handoff, noReply, imageKey, usage }`. The handoff and
+ * no-reply sentinels can appear alone or trailing a partial reply;
+ * either way we treat the turn accordingly and strip the marker from
  * any remaining text. The image sentinel (if present) is extracted and
  * stripped the same way — it's addressed to the code, never shown to
  * the customer. `usage` is passed straight through (null when the
@@ -69,12 +75,15 @@ export function parseGeneration(
   usage: AiUsage | null = null,
 ): GenerateResult {
   const handoff = raw.includes(HANDOFF_SENTINEL)
+  const noReply = raw.includes(NOREPLY_SENTINEL)
   const imageMatch = raw.match(IMAGE_SENTINEL_REGEX)
   const imageKey = imageMatch ? imageMatch[1].trim() : null
   const text = raw
     .split(HANDOFF_SENTINEL)
     .join('')
+    .split(NOREPLY_SENTINEL)
+    .join('')
     .replace(IMAGE_SENTINEL_REGEX, '')
     .trim()
-  return { text, handoff, imageKey, usage }
+  return { text, handoff, noReply, imageKey, usage }
 }

@@ -26,6 +26,18 @@ export const AI_PROVIDER_DEFAULT_MODEL: Record<AiProvider, string> = {
 export const HANDOFF_SENTINEL = '[[HANDOFF]]'
 
 /**
+ * Sentinel the model is instructed to emit (in auto-reply mode) when the
+ * right move is to simply not reply this turn — e.g. the customer sent a
+ * closing remark ("ok thanks", "nothing else") with no new question and
+ * no location, so there's nothing useful to say without re-stating
+ * information already given. Unlike `HANDOFF_SENTINEL`, this does NOT
+ * hand the conversation to a human or disable future auto-replies — the
+ * bot just stays quiet for this one turn and stays live for whatever the
+ * customer sends next.
+ */
+export const NOREPLY_SENTINEL = '[[NOREPLY]]'
+
+/**
  * Prefix for the sentinel the model uses to attach a specific product
  * image (`[[IMAGE:<key>]]`) — e.g. when the reply depends on a variant
  * (a recommended size, a color) that the model derived rather than
@@ -94,6 +106,9 @@ export function buildSystemPrompt(args: {
     )
     parts.push(
       `If the business context below defines product image keys, you may attach one specific image to your reply by adding ${IMAGE_SENTINEL_PREFIX}<key>]] on its own line — use the exact key for the specific variant your reply is about (e.g. a size you recommended), not a generic category guess. It will be stripped from what the customer sees, so never mention or describe it in your visible reply.`,
+    )
+    parts.push(
+      `If the business context below defines when to simply stay quiet (e.g. the customer closed out the conversation with no new question), reply with exactly ${NOREPLY_SENTINEL} and nothing else — no message will be sent, but auto-reply stays active for the customer's next message. This is different from a handoff: it does not involve a human, it's just choosing not to reply to this particular message.`,
     )
   }
 
