@@ -109,8 +109,24 @@ export async function dispatchInboundToAiReply(
       messages,
     )
 
+    // Peru doesn't observe DST, so a fixed UTC-5 offset is always
+    // correct — lets the model greet with the right "Buenos días /
+    // buenas tardes / buenas noches" instead of guessing (it has no
+    // other way to know the current time; the conversation history it
+    // sees carries no timestamps).
+    const limaHour = new Date(Date.now() - 5 * 60 * 60 * 1000).getUTCHours()
+    const greetingHint =
+      limaHour < 12
+        ? 'Es de mañana en Perú — el saludo correcto es "Buenos días".'
+        : limaHour < 19
+          ? 'Es de tarde en Perú — el saludo correcto es "Buenas tardes".'
+          : 'Es de noche en Perú — el saludo correcto es "Buenas noches".'
+    const userPromptWithTime = config.systemPrompt
+      ? `${config.systemPrompt}\n\n${greetingHint}`
+      : greetingHint
+
     const systemPrompt = buildSystemPrompt({
-      userPrompt: config.systemPrompt,
+      userPrompt: userPromptWithTime,
       mode: 'auto_reply',
       knowledge,
     })
