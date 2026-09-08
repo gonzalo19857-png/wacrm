@@ -418,6 +418,28 @@ export function MessageComposer({
     [stageUpload],
   );
 
+  // Pasting a screenshot or copied image (Ctrl+V) stages it exactly like
+  // the attach-menu picker, instead of forcing agents through the file
+  // dialog for something a normal WhatsApp client handles natively.
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      if (inputsDisabled || busy || draft) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.kind === "file" && item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            void stageUpload("image", file);
+          }
+          return;
+        }
+      }
+    },
+    [inputsDisabled, busy, draft, stageUpload],
+  );
+
   // ---- Voice recording (client-side Ogg/Opus, no server transcode) ---
 
   // The encoded Ogg/Opus file from opus-recorder → upload as an audio
@@ -731,6 +753,7 @@ export function MessageComposer({
             value={text}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder={
               readOnly
                 ? t("readOnlyPlaceholder")
