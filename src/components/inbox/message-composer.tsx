@@ -47,6 +47,7 @@ import {
   MEDIA_MAX_BYTES_BY_KIND,
 } from "@/lib/storage/upload-media";
 import { ReplyQuote } from "./reply-quote";
+import { EmojiPicker } from "./emoji-picker";
 import { useTranslations } from "next-intl";
 import {
   InteractiveBuilder,
@@ -252,6 +253,28 @@ export function MessageComposer({
       adjustHeight();
     },
     [adjustHeight]
+  );
+
+  // Inserts at the caret (not just appended) so picking an emoji mid-edit
+  // lands where the agent was actually typing. `emoji.length` is safe here
+  // even for multi-code-unit emoji (flags, ZWJ sequences, variation
+  // selectors) since JS string indices and textarea selection offsets both
+  // count UTF-16 code units.
+  const handleInsertEmoji = useCallback(
+    (emoji: string) => {
+      const el = textareaRef.current;
+      const start = el?.selectionStart ?? text.length;
+      const end = el?.selectionEnd ?? text.length;
+      setText((prev) => prev.slice(0, start) + emoji + prev.slice(end));
+      requestAnimationFrame(() => {
+        adjustHeight();
+        if (!el) return;
+        el.focus();
+        const pos = start + emoji.length;
+        el.setSelectionRange(pos, pos);
+      });
+    },
+    [text, adjustHeight]
   );
 
   // Ask the AI assistant for a suggested reply and drop it into the
@@ -748,6 +771,18 @@ export function MessageComposer({
             )}
           </GatedButton>
 
+          <EmojiPicker
+            onPick={handleInsertEmoji}
+            disabled={inputsDisabled}
+            title={
+              readOnly
+                ? t("readOnlyTitle")
+                : inputsDisabled
+                  ? undefined
+                  : t("addEmoji")
+            }
+          />
+
           <textarea
             ref={textareaRef}
             value={text}
@@ -790,7 +825,7 @@ export function MessageComposer({
           `items-end` buttons below the textarea. Indented to line up
           under the textarea left edge. */}
       {!draft && !recording && (
-        <p className="mt-1 pl-[5.5rem] text-[10px] text-muted-foreground">
+        <p className="mt-1 pl-[8.25rem] text-[10px] text-muted-foreground">
           {t("draftHint")}
         </p>
       )}
