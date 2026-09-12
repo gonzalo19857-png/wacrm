@@ -16,6 +16,8 @@ import { ContactSidebar } from "@/components/inbox/contact-sidebar";
 import { toast } from "sonner";
 import { WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isNotificationSoundEnabled } from "@/hooks/use-notification-sound";
+import { playNotificationSound } from "@/lib/notify-sound";
 
 // Remembers the agent's show/hide choice for the desktop contact panel
 // across reloads and sessions (device-scoped, like the theme prefs).
@@ -218,6 +220,15 @@ function InboxPageInner() {
       const newMsg = event.new;
 
       if (event.eventType === "INSERT") {
+        // Inbound-only: an agent sending their own message shouldn't
+        // hear a "new message" chime for it. Read the preference fresh
+        // on every message (rather than via the hook) so a toggle
+        // flipped in Settings — even in another tab — takes effect
+        // immediately without needing this component to re-render.
+        if (newMsg.sender_type === "customer" && isNotificationSoundEnabled()) {
+          playNotificationSound();
+        }
+
         // Add to messages if it belongs to active conversation
         if (
           activeConversation &&

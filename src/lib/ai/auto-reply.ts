@@ -4,7 +4,7 @@ import { buildConversationContext } from './context'
 import { retrieveKnowledgeForMessages } from './knowledge'
 import { generateReply } from './generate'
 import { buildSystemPrompt } from './defaults'
-import { buildHandoffSummary } from './handoff'
+import { buildHandoffSummary, sendHandoffTelegramAlert } from './handoff'
 import {
   enforceWhatsAppEmphasis,
   stripRepeatedRecommendation,
@@ -201,6 +201,19 @@ export async function dispatchInboundToAiReply(
         update.assigned_agent_id = config.handoffAgentId
       }
       await db.from('conversations').update(update).eq('id', conversationId)
+
+      // Fire-and-forget: never let a Telegram hiccup delay or fail the
+      // handoff itself, which has already been persisted above.
+      if (config.telegramNotifyOnHandoff && config.telegramBotToken && config.telegramChatId) {
+        void sendHandoffTelegramAlert(db, {
+          telegramBotToken: config.telegramBotToken,
+          telegramChatId: config.telegramChatId,
+          conversationId,
+          contactId,
+          summary,
+        })
+      }
+
       return
     }
 

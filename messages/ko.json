@@ -1618,6 +1618,13 @@
       "accentColor": "강조 색상",
       "useTheme": "{name} 테마 사용"
     },
+    "notifications": {
+      "title": "알림",
+      "description": "이 브라우저에서 새로운 활동을 어떻게 알릴지 설정합니다.",
+      "soundOnNewMessage": "새 메시지 알림음 재생",
+      "soundOnNewMessageDesc": "고객 메시지가 도착할 때마다 짧은 알림음을 재생합니다. 이 기기에 저장됩니다.",
+      "previewSound": "알림음 미리 듣기"
+    },
     "security": {
       "title": "로그인 & 보안",
       "description": "비밀번호를 변경하고 기기에서 로그아웃하세요. 계정을 안전하게 유지하는 데 도움이 됩니다."
@@ -1704,6 +1711,20 @@
       "handoffTo": "인계 대상",
       "handoffToDesc": "봇이 도움을 줄 수 없거나 응답 한도에 도달하면 일시 중지하고 무슨 일이 있었는지 짧은 메모와 함께 이 대상에게 대화를 넘깁니다.",
       "handoffQueue": "미배정 대기열 (모든 상담원이 처리 가능)",
+      "telegramTitle": "텔레그램 인계 알림",
+      "telegramDesc": "봇이 대화를 상담원에게 넘기는 즉시 텔레그램으로 알림을 받으세요 — 받은함을 아무도 보고 있지 않을 때 유용합니다.",
+      "telegramBotToken": "봇 토큰",
+      "telegramBotTokenPlaceholder": "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
+      "telegramBotTokenHint": "텔레그램에서 @BotFather로 봇을 만들고 발급된 토큰을 붙여넣으세요.",
+      "telegramChatId": "채팅 ID",
+      "telegramChatIdPlaceholder": "예: 123456789",
+      "telegramChatIdHint": "봇에게 메시지를 한 번 보낸 뒤 api.telegram.org/bot<token>/getUpdates에서 채팅 ID를 확인하세요.",
+      "telegramNotify": "인계 시 알림",
+      "telegramNotifyDesc": "봇이 대화를 상담원에게 넘길 때마다 텔레그램 메시지를 보냅니다.",
+      "telegramTest": "테스트 전송",
+      "telegramTestSuccess": "테스트 메시지를 보냈습니다 — 텔레그램을 확인하세요.",
+      "telegramTestFailed": "테스트 메시지를 보내지 못했습니다.",
+      "telegramTestNetworkError": "텔레그램에 연결할 수 없습니다.",
       "remove": "제거",
       "save": "저장",
       "missingModel": "모델 이름을 입력하세요.",

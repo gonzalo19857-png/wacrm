@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Sparkles, CheckCircle2, Trash2, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Sparkles, CheckCircle2, Trash2, Eye, EyeOff, Send } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { canEditSettings } from '@/lib/auth/roles';
 import { Button } from '@/components/ui/button';
@@ -78,6 +78,15 @@ export function AiConfig() {
   const [handoffAgentId, setHandoffAgentId] = useState('');
   const [members, setMembers] = useState<AccountMember[]>([]);
 
+  // Telegram handoff alert.
+  const [telegramBotToken, setTelegramBotToken] = useState('');
+  const [telegramBotTokenEdited, setTelegramBotTokenEdited] = useState(false);
+  const [showTelegramToken, setShowTelegramToken] = useState(false);
+  const [hasStoredTelegramToken, setHasStoredTelegramToken] = useState(false);
+  const [telegramChatId, setTelegramChatId] = useState('');
+  const [telegramNotifyOnHandoff, setTelegramNotifyOnHandoff] = useState(false);
+  const [testingTelegram, setTestingTelegram] = useState(false);
+
   // Guard keyed on the account (not a bare boolean) so an in-place
   // account switch — ownership transfer, multi-account membership —
   // refetches instead of showing the previous account's config. Mirrors
@@ -108,6 +117,11 @@ export function AiConfig() {
         setHasStoredEmbeddingsKey(Boolean(data.has_embeddings_key));
         setEmbeddingsKey(data.has_embeddings_key ? MASKED_KEY : '');
         setEmbeddingsKeyEdited(false);
+        setHasStoredTelegramToken(Boolean(data.has_telegram_token));
+        setTelegramBotToken(data.has_telegram_token ? MASKED_KEY : '');
+        setTelegramBotTokenEdited(false);
+        setTelegramChatId(data.telegram_chat_id ?? '');
+        setTelegramNotifyOnHandoff(Boolean(data.telegram_notify_on_handoff));
       }
     } catch {
       toast.error(t('loadFailed'));
@@ -144,6 +158,9 @@ export function AiConfig() {
   const embeddingsKeyPayload = () =>
     embeddingsKeyEdited ? embeddingsKey.trim() || null : undefined;
 
+  const telegramTokenPayload = () =>
+    telegramBotTokenEdited ? telegramBotToken.trim() : undefined;
+
   const buildBody = () => ({
     provider,
     model: model.trim(),
@@ -154,6 +171,9 @@ export function AiConfig() {
     auto_reply_enabled: autoReplyEnabled,
     auto_reply_max_per_conversation: maxPerConversation,
     handoff_agent_id: handoffAgentId || null,
+    telegram_bot_token: telegramTokenPayload(),
+    telegram_chat_id: telegramChatId.trim(),
+    telegram_notify_on_handoff: telegramNotifyOnHandoff,
   });
 
   const handleTest = async () => {
@@ -175,6 +195,27 @@ export function AiConfig() {
       toast.error(t('testNetworkError'));
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handleTelegramTest = async () => {
+    setTestingTelegram(true);
+    try {
+      const res = await fetch('/api/telegram/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bot_token: telegramTokenPayload() ?? '',
+          chat_id: telegramChatId.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) toast.success(t('telegramTestSuccess'));
+      else toast.error(data.error ?? t('telegramTestFailed'));
+    } catch {
+      toast.error(t('telegramTestNetworkError'));
+    } finally {
+      setTestingTelegram(false);
     }
   };
 
@@ -222,6 +263,11 @@ export function AiConfig() {
         setAutoReplyEnabled(false);
         setSystemPrompt('');
         setHandoffAgentId('');
+        setHasStoredTelegramToken(false);
+        setTelegramBotToken('');
+        setTelegramBotTokenEdited(false);
+        setTelegramChatId('');
+        setTelegramNotifyOnHandoff(false);
       } else {
         const data = await res.json();
         toast.error(data.error ?? t('removeFailed'));
@@ -494,6 +540,93 @@ export function AiConfig() {
                 </SelectContent>
               </Select>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Send className="h-4 w-4 text-primary" /> {t('telegramTitle')}
+            </CardTitle>
+            <CardDescription>{t('telegramDesc')}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="telegram-token">{t('telegramBotToken')}</Label>
+              <div className="relative">
+                <Input
+                  id="telegram-token"
+                  type={showTelegramToken ? 'text' : 'password'}
+                  value={telegramBotToken}
+                  onChange={(e) => {
+                    setTelegramBotToken(e.target.value);
+                    setTelegramBotTokenEdited(true);
+                  }}
+                  onFocus={() => {
+                    if (!telegramBotTokenEdited && hasStoredTelegramToken) {
+                      setTelegramBotToken('');
+                      setTelegramBotTokenEdited(true);
+                    }
+                  }}
+                  placeholder={t('telegramBotTokenPlaceholder')}
+                  disabled={disabled}
+                  autoComplete="off"
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowTelegramToken((s) => !s)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  tabIndex={-1}
+                >
+                  {showTelegramToken ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground">{t('telegramBotTokenHint')}</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="telegram-chat-id">{t('telegramChatId')}</Label>
+              <Input
+                id="telegram-chat-id"
+                value={telegramChatId}
+                onChange={(e) => setTelegramChatId(e.target.value)}
+                placeholder={t('telegramChatIdPlaceholder')}
+                disabled={disabled}
+                autoComplete="off"
+              />
+              <p className="text-xs text-muted-foreground">{t('telegramChatIdHint')}</p>
+            </div>
+
+            <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">{t('telegramNotify')}</p>
+                <p className="text-xs text-muted-foreground">{t('telegramNotifyDesc')}</p>
+              </div>
+              <Switch
+                checked={telegramNotifyOnHandoff}
+                onCheckedChange={setTelegramNotifyOnHandoff}
+                disabled={disabled}
+              />
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleTelegramTest}
+              disabled={disabled || testingTelegram}
+            >
+              {testingTelegram ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="mr-2 h-4 w-4" />
+              )}
+              {t('telegramTest')}
+            </Button>
           </CardContent>
         </Card>
 

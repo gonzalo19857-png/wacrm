@@ -1618,6 +1618,13 @@
       "accentColor": "Accent color",
       "useTheme": "Use {name} theme"
     },
+    "notifications": {
+      "title": "Notifications",
+      "description": "Control how you're alerted to new activity in this browser.",
+      "soundOnNewMessage": "Play a sound for new messages",
+      "soundOnNewMessageDesc": "Plays a short chime whenever a customer message arrives. Saved to this device.",
+      "previewSound": "Preview sound"
+    },
     "security": {
       "title": "Login & security",
       "description": "Change your password and sign out of your devices. These keep your account safe."
@@ -1704,6 +1711,20 @@
       "handoffTo": "Hand off to",
       "handoffToDesc": "When the bot can’t help — or hits the reply cap — it pauses and routes the chat here, with a short note on what happened.",
       "handoffQueue": "Unassigned queue (any agent can pick it up)",
+      "telegramTitle": "Telegram handoff alert",
+      "telegramDesc": "Get pinged on Telegram the instant the bot hands a conversation off to a human — useful when nobody's watching the inbox.",
+      "telegramBotToken": "Bot token",
+      "telegramBotTokenPlaceholder": "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
+      "telegramBotTokenHint": "Create a bot with @BotFather on Telegram and paste the token it gives you.",
+      "telegramChatId": "Chat id",
+      "telegramChatIdPlaceholder": "e.g. 123456789",
+      "telegramChatIdHint": "Message your bot once, then visit api.telegram.org/bot<token>/getUpdates to find your chat id.",
+      "telegramNotify": "Notify on handoff",
+      "telegramNotifyDesc": "Send a Telegram message every time the bot hands a conversation off to a human.",
+      "telegramTest": "Send test",
+      "telegramTestSuccess": "Test message sent — check Telegram.",
+      "telegramTestFailed": "Couldn't send the test message.",
+      "telegramTestNetworkError": "Couldn't reach Telegram.",
       "remove": "Remove",
       "save": "Save",
       "missingModel": "Enter a model name.",

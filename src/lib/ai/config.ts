@@ -12,10 +12,13 @@ interface AiConfigRow {
   auto_reply_max_per_conversation: number
   handoff_agent_id: string | null
   embeddings_api_key: string | null
+  telegram_bot_token: string | null
+  telegram_chat_id: string | null
+  telegram_notify_on_handoff: boolean
 }
 
 const CONFIG_COLUMNS =
-  'provider, model, api_key, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, embeddings_api_key'
+  'provider, model, api_key, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, embeddings_api_key, telegram_bot_token, telegram_chat_id, telegram_notify_on_handoff'
 
 /**
  * Load and decrypt the account's AI config for *use* (draft or
@@ -69,6 +72,22 @@ export async function loadAiConfig(
     }
   }
 
+  // Same "never take down auto-reply over a secondary credential"
+  // discipline as the embeddings key above — a corrupt/rotated
+  // ENCRYPTION_KEY should just silently disable the Telegram alert,
+  // not the reply itself.
+  let telegramBotToken: string | null = null
+  if (row.telegram_bot_token) {
+    try {
+      telegramBotToken = decrypt(row.telegram_bot_token)
+    } catch {
+      console.error(
+        `[ai config] Telegram bot token for account ${accountId} could not be decrypted — check ENCRYPTION_KEY; handoff alerts are disabled until it is re-entered.`,
+      )
+      telegramBotToken = null
+    }
+  }
+
   return {
     provider: row.provider,
     model: row.model,
@@ -79,6 +98,9 @@ export async function loadAiConfig(
     autoReplyMaxPerConversation: row.auto_reply_max_per_conversation,
     handoffAgentId: row.handoff_agent_id,
     embeddingsApiKey,
+    telegramBotToken,
+    telegramChatId: row.telegram_chat_id,
+    telegramNotifyOnHandoff: row.telegram_notify_on_handoff,
   }
 }
 

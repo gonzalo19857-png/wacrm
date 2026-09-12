@@ -9,6 +9,7 @@ import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { validateAiCredentials } from '@/lib/ai/validate'
 import { embedTexts } from '@/lib/ai/embeddings'
 import { AiError, type AiProvider } from '@/lib/ai/types'
+import { validateTelegramBotToken } from '@/lib/telegram/send'
 
 function bad(message: string) {
   return NextResponse.json({ error: message }, { status: 400 })
@@ -30,7 +31,7 @@ export async function GET() {
       // `api_key` is selected only to derive `has_key` — it is stripped
       // out below and never returned to the client.
       .select(
-        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, api_key, embeddings_api_key',
+        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, api_key, embeddings_api_key, telegram_bot_token, telegram_chat_id, telegram_notify_on_handoff',
       )
       .eq('account_id', accountId)
       .maybeSingle()
@@ -46,11 +47,12 @@ export async function GET() {
     if (!data) return NextResponse.json({ configured: false })
     // The keys are selected only to derive the has_* flags; neither is
     // returned to the client.
-    const { api_key, embeddings_api_key, ...safe } = data
+    const { api_key, embeddings_api_key, telegram_bot_token, ...safe } = data
     return NextResponse.json({
       configured: true,
       has_key: !!api_key,
       has_embeddings_key: !!embeddings_api_key,
+      has_telegram_token: !!telegram_bot_token,
       ...safe,
     })
   } catch (err) {
@@ -125,10 +127,21 @@ export async function POST(request: Request) {
         : ''
     const clearEmbeddingsKey = body.embeddings_api_key === null
 
+    // Telegram handoff alert. Bot token follows the same "send only
+    // when re-entered, else keep the stored one" contract as api_key;
+    // chat id isn't a secret, so an explicit '' / null clears it and
+    // absence leaves it unchanged (mirrors handoff_agent_id).
+    const rawTelegramToken =
+      typeof body.telegram_bot_token === 'string' ? body.telegram_bot_token.trim() : ''
+    const telegramChatIdProvided = 'telegram_chat_id' in body
+    const rawTelegramChatId =
+      typeof body.telegram_chat_id === 'string' ? body.telegram_chat_id.trim() : ''
+    const telegramNotifyOnHandoff = body.telegram_notify_on_handoff === true
+
     // Reuse the stored key when the form didn't send a fresh one.
     const { data: existing } = await supabase
       .from('ai_configs')
-      .select('id, provider, model, api_key')
+      .select('id, provider, model, api_key, telegram_bot_token, telegram_chat_id')
       .eq('account_id', accountId)
       .maybeSingle()
 
@@ -167,6 +180,9 @@ export async function POST(request: Request) {
           autoReplyMaxPerConversation: maxPer,
           handoffAgentId: null,
           embeddingsApiKey: null,
+          telegramBotToken: null,
+          telegramChatId: null,
+          telegramNotifyOnHandoff: false,
         })
       } catch (err) {
         if (err instanceof AiError) {
@@ -197,6 +213,31 @@ export async function POST(request: Request) {
       }
     }
 
+    // Confirm a freshly-entered bot token is real (no message sent —
+    // just `getMe`) before storing it, same discipline as the provider
+    // key above.
+    if (rawTelegramToken) {
+      const result = await validateTelegramBotToken(rawTelegramToken)
+      if (!result.ok) {
+        return bad(`Telegram bot token: ${result.error}`)
+      }
+    }
+
+    // The alert can't fire without both a token (fresh or stored) and a
+    // chat id (fresh or stored) — catch that combination at save time
+    // rather than silently no-op-ing on every handoff.
+    if (telegramNotifyOnHandoff) {
+      const hasToken = !!(rawTelegramToken || existing?.telegram_bot_token)
+      const resolvedChatId = telegramChatIdProvided
+        ? rawTelegramChatId
+        : existing?.telegram_chat_id
+      if (!hasToken || !resolvedChatId) {
+        return bad(
+          'Set a Telegram bot token and chat id before enabling handoff notifications.',
+        )
+      }
+    }
+
     const encryptedKey = rawKey ? encrypt(rawKey) : null
     const shared: Record<string, unknown> = {
       provider,
@@ -205,6 +246,7 @@ export async function POST(request: Request) {
       is_active: isActive,
       auto_reply_enabled: autoReplyEnabled,
       auto_reply_max_per_conversation: maxPer,
+      telegram_notify_on_handoff: telegramNotifyOnHandoff,
     }
     // Only touch the handoff target when the form actually sent the field,
     // so a partial save (e.g. flipping a toggle) doesn't wipe it.
@@ -214,6 +256,8 @@ export async function POST(request: Request) {
     } else if (clearEmbeddingsKey) {
       shared.embeddings_api_key = null
     }
+    if (rawTelegramToken) shared.telegram_bot_token = encrypt(rawTelegramToken)
+    if (telegramChatIdProvided) shared.telegram_chat_id = rawTelegramChatId || null
 
     if (existing) {
       const { error: upErr } = await supabase
