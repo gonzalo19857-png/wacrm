@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import type { Contact, Deal, ContactNote, Tag } from "@/types";
+import { addContactTag, deleteContactTag } from "@/lib/contacts/tag-api";
 import {
   Phone,
   Mail,
@@ -18,6 +19,11 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { format } from "date-fns";
 import { useTranslations } from "next-intl";
 
@@ -28,12 +34,15 @@ interface ContactSidebarProps {
 export function ContactSidebar({ contact }: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const tThread = useTranslations("Inbox.messageThread");
+  const tTagsTab = useTranslations("Contacts.detailView.tagsTab");
 
   const { accountId } = useAuth();
   const [copied, setCopied] = useState(false);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
+  const [allTags, setAllTags] = useState<Tag[]>([]);
+  const [savingTagId, setSavingTagId] = useState<string | null>(null);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
 
@@ -79,6 +88,43 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContactData();
   }, [fetchContactData]);
+
+  // Account's full tag list, loaded once so the "add tag" popover has
+  // something to offer without a round trip every time it opens.
+  useEffect(() => {
+    if (!accountId) return;
+    let cancelled = false;
+    const supabase = createClient();
+    supabase
+      .from("tags")
+      .select("*")
+      .order("name")
+      .then(({ data }) => {
+        if (!cancelled && data) setAllTags(data as Tag[]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [accountId]);
+
+  const handleToggleTag = useCallback(
+    async (tagId: string) => {
+      if (!contact) return;
+      const isSelected = tags.some((tag) => tag.id === tagId);
+      setSavingTagId(tagId);
+      try {
+        if (isSelected) {
+          await deleteContactTag(contact.id, tagId);
+        } else {
+          await addContactTag(contact.id, tagId);
+        }
+        await fetchContactData();
+      } finally {
+        setSavingTagId(null);
+      }
+    },
+    [contact, tags, fetchContactData]
+  );
 
   const handleCopyPhone = useCallback(async () => {
     if (!contact?.phone) return;
@@ -183,9 +229,57 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
           {/* Tags */}
           <div>
-            <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              <TagIcon className="h-3 w-3" />
-              {tSidebar("tags")}
+            <div className="flex items-center justify-between gap-2 px-1">
+              <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                <TagIcon className="h-3 w-3" />
+                {tSidebar("tags")}
+              </div>
+              <Popover>
+                <PopoverTrigger
+                  className="inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+                  title={tSidebar("tags")}
+                  aria-label={tSidebar("tags")}
+                >
+                  <Plus className="h-3 w-3" />
+                </PopoverTrigger>
+                <PopoverContent align="end" className="max-h-64 w-64 overflow-y-auto">
+                  <p className="mb-2 px-0.5 text-xs text-muted-foreground">
+                    {tTagsTab("clickTagDesc")}
+                  </p>
+                  {allTags.length === 0 ? (
+                    <p className="px-0.5 text-xs text-muted-foreground">
+                      {tTagsTab("noTagsAvailable")}
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {allTags.map((tag) => {
+                        const selected = tags.some((t) => t.id === tag.id);
+                        return (
+                          <button
+                            key={tag.id}
+                            type="button"
+                            onClick={() => handleToggleTag(tag.id)}
+                            disabled={savingTagId === tag.id}
+                            className={cn(
+                              "inline-flex cursor-pointer items-center rounded-full px-2.5 py-1 text-xs font-medium transition-all disabled:cursor-not-allowed",
+                              selected
+                                ? "ring-2 ring-primary ring-offset-1 ring-offset-popover"
+                                : "opacity-50 hover:opacity-80"
+                            )}
+                            style={{
+                              backgroundColor: `${tag.color}20`,
+                              color: tag.color,
+                            }}
+                          >
+                            {selected && <Check className="mr-1 h-3 w-3" />}
+                            {tag.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </PopoverContent>
+              </Popover>
             </div>
             <div className="mt-2 flex flex-wrap gap-1">
               {tags.length === 0 ? (
