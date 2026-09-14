@@ -140,7 +140,10 @@ export function DealForm({
         .from("conversations")
         .select("*")
         .eq("contact_id", contactId)
-        .order("last_message_at", { ascending: false })
+        // See conversation-list.tsx: NULL last_message_at (an empty
+        // conversation) otherwise sorts first in Postgres DESC order and
+        // would get linked instead of the contact's actual latest chat.
+        .order("last_message_at", { ascending: false, nullsFirst: false })
         .limit(1)
         .maybeSingle();
       if (cancelled) return;

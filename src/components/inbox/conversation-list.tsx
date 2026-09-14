@@ -99,7 +99,12 @@ export function ConversationList({
       const { data, error } = await supabase
         .from("conversations")
         .select(CONVERSATION_SELECT)
-        .order("last_message_at", { ascending: false });
+        // `nullsFirst: false` — a conversation that never received a
+        // message has last_message_at = NULL, and Postgres treats NULL
+        // as the largest value, so DESC order (the default here) puts
+        // it first and keeps it pinned above every real, recent
+        // conversation forever.
+        .order("last_message_at", { ascending: false, nullsFirst: false });
 
       if (cancelled) return;
 
