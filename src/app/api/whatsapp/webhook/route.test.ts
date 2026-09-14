@@ -6,6 +6,11 @@ const h = vi.hoisted(() => ({
   dispatchInboundToFlows: vi.fn(),
   dispatchInboundToAiReply: vi.fn(),
   dispatchWebhookEvent: vi.fn(),
+  findExistingContact: vi.fn(async () => ({
+    id: 'contact-1',
+    name: 'Ada',
+    phone: '15551230000',
+  })),
   state: {
     // Result the message upsert's .select() resolves to. A genuine insert
     // returns the row; a replayed delivery conflicts and returns [].
@@ -175,11 +180,7 @@ vi.mock('@/lib/whatsapp/meta-api', () => ({
   downloadMedia: vi.fn(),
 }))
 vi.mock('@/lib/contacts/dedupe', () => ({
-  findExistingContact: vi.fn(async () => ({
-    id: 'contact-1',
-    name: 'Ada',
-    phone: '15551230000',
-  })),
+  findExistingContact: h.findExistingContact,
   isUniqueViolation: () => false,
 }))
 vi.mock('@/lib/whatsapp/webhook-signature', () => ({
@@ -313,6 +314,33 @@ describe('inbound webhook: idempotent insert (#367)', () => {
     expect(h.runAutomationsForTrigger).not.toHaveBeenCalled()
     expect(h.dispatchInboundToAiReply).not.toHaveBeenCalled()
     expect(h.dispatchWebhookEvent).not.toHaveBeenCalled()
+  })
+})
+
+describe('inbound webhook: contact phone sourcing', () => {
+  it("uses contact.wa_id, not message.from, to look up/create the contact", async () => {
+    // message.from empty (observed on some Click-to-WhatsApp-ad first
+    // messages) — wa_id is the field that's reliably populated. Before
+    // the fix, senderPhone came from message.from alone, which created
+    // an unreachable contact with no phone number on deliveries shaped
+    // like this.
+    await runWebhook({ ...TEXT_MESSAGE, from: '' })
+
+    expect(h.findExistingContact).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      '15551230000',
+    )
+  })
+
+  it('still works normally when message.from and wa_id agree', async () => {
+    await runWebhook()
+
+    expect(h.findExistingContact).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      '15551230000',
+    )
   })
 })
 

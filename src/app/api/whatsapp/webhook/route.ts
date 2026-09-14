@@ -588,7 +588,17 @@ async function processMessage(
   // See parseMessageContent for what it turns off.
   mirrorMedia: boolean
 ) {
-  const senderPhone = normalizePhone(message.from)
+  // `contact.wa_id` (from the webhook's paired `contacts[]` entry) is
+  // Meta's dedicated "who sent this" phone field — prefer it over
+  // `message.from`. Both are documented as the same value, but 144
+  // contacts in production (most first messages carrying the exact
+  // pre-filled Click-to-WhatsApp-ad greeting, so that's the leading
+  // suspect) ended up with an empty stored phone, which only happens
+  // if `message.from` was empty on the inbound delivery. Those leads
+  // became permanently unreachable — the account could see they'd
+  // messaged in but never reply. Falling back to `message.from` only
+  // covers the case where `wa_id` itself is somehow missing.
+  const senderPhone = normalizePhone(contact.wa_id || message.from)
   const contactName = contact.profile.name
 
   // Find or create contact
@@ -1118,6 +1128,17 @@ async function findOrCreateContact(
   phone: string,
   name: string
 ): Promise<ContactOutcome | null> {
+  if (!phone) {
+    // Both `contact.wa_id` and `message.from` failed to normalize to a
+    // real phone number — should be effectively unreachable now that
+    // the caller prefers `wa_id`, but log loudly rather than silently
+    // creating a contact nobody can ever message back (that's the bug
+    // this guard exists to catch if it ever recurs).
+    console.error(
+      `[webhook] inbound message for account ${accountId} has no usable phone number (name: ${name || '(none)'}) — creating contact anyway so the lead isn't lost, but it can't be messaged until the number is added manually.`,
+    )
+  }
+
   // Find an existing contact for this account by phone. The shared
   // helper pre-filters in SQL by the last-8-digit suffix (so we don't
   // pull every contact on every inbound message) then applies the
