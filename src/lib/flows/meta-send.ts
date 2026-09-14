@@ -142,6 +142,7 @@ export async function engineSendText(
     .from('conversations')
     .update({
       last_message_text: args.text,
+      last_message_sender_type: 'bot',
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
@@ -264,6 +265,7 @@ export async function engineSendMedia(
     .from('conversations')
     .update({
       last_message_text: preview,
+      last_message_sender_type: 'bot',
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
@@ -457,6 +459,7 @@ async function sendInteractiveViaMeta(
     .from('conversations')
     .update({
       last_message_text: input.bodyText,
+      last_message_sender_type: 'bot',
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })

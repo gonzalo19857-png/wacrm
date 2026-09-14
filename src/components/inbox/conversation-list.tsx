@@ -446,6 +446,15 @@ function ConversationItem({
   const displayName = contact?.name || contact?.phone || t("unknown");
   const initials = displayName.charAt(0).toUpperCase();
   const isUnread = conversation.unread_count > 0;
+  // The customer spoke last and nobody (bot or agent) has answered
+  // since — this is the row that needs a human reply. Persists even
+  // after the agent has opened/read it (unlike isUnread, which clears
+  // on open), because reading a message isn't the same as answering
+  // it. A closed conversation is excluded — the business considers it
+  // done regardless of who sent the last message.
+  const needsReply =
+    conversation.last_message_sender_type === "customer" &&
+    conversation.status !== "closed";
 
   const handleClick = useCallback(() => {
     onSelect(conversation);
@@ -499,24 +508,36 @@ function ConversationItem({
           >
             {displayName}
           </span>
-          <span
-            className={cn(
-              "shrink-0 text-[11px]",
-              isUnread
-                ? "font-semibold text-primary"
-                : "text-muted-foreground"
+          <span className="flex shrink-0 items-center gap-1.5">
+            {/* Persistent "needs a reply" flag — stays amber even after
+                the row has been opened/read, unlike the unread badge. */}
+            {needsReply && (
+              <span
+                className="h-1.5 w-1.5 rounded-full bg-amber-500"
+                title={t("needsReply")}
+              />
             )}
-          >
-            {timeAgo}
+            <span
+              className={cn(
+                "text-[11px]",
+                isUnread
+                  ? "font-semibold text-primary"
+                  : "text-muted-foreground"
+              )}
+            >
+              {timeAgo}
+            </span>
           </span>
         </div>
         <div className="mt-1 flex items-center justify-between gap-2">
           <p
             className={cn(
               "truncate text-[13px]",
-              isUnread
-                ? "font-medium text-foreground"
-                : "text-muted-foreground"
+              needsReply
+                ? "font-medium text-amber-600 dark:text-amber-400"
+                : isUnread
+                  ? "font-medium text-foreground"
+                  : "text-muted-foreground"
             )}
           >
             {conversation.last_message_text || t("noMessagesYet")}

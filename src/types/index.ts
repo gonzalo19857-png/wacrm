@@ -165,6 +165,10 @@ export interface Conversation {
   assigned_agent_id?: string;
   last_message_text?: string;
   last_message_at?: string;
+  /** Who sent the most recent message — drives the inbox's "needs a
+   *  reply" cue: 'customer' means nobody has answered yet. Null for a
+   *  conversation with no messages at all (migration 044). */
+  last_message_sender_type?: 'customer' | 'agent' | 'bot' | null;
   unread_count: number;
   created_at: string;
   updated_at: string;

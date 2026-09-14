@@ -48,25 +48,38 @@ function truncate(text: string, max: number): string {
   return `${collapsed.slice(0, max - 1).trimEnd()}…`
 }
 
+/** Why a "needs a human" alert is firing — picks the header line. */
+export type NeedsReplyReason = 'handoff' | 'needs_human'
+
+const REASON_HEADERS: Record<NeedsReplyReason, string> = {
+  handoff: '🙋 Cliente interesado — el bot derivó la conversación',
+  needs_human: '💬 Mensaje nuevo que necesita respuesta humana',
+}
+
 /**
- * Best-effort Telegram DM fired alongside a handoff, so an admin who
- * isn't watching the inbox still finds out the moment a customer
- * needs a human. Swallows all errors — a Telegram outage or a bad
- * token must never affect the handoff itself, which has already
- * happened by the time this runs. Call with `void` (fire-and-forget),
- * same discipline as `logAiUsage`.
+ * Best-effort Telegram DM so an admin who isn't watching the inbox
+ * still finds out the moment a customer needs a human — whether
+ * that's a fresh handoff (the bot's own summary as `detail`) or a
+ * follow-up message on a thread nothing will auto-answer (already
+ * handed off, assigned to an agent, or the bot hit its reply cap —
+ * see the three new call sites in auto-reply.ts). Swallows all
+ * errors — a Telegram outage or a bad token must never affect the
+ * conversation state, which has already been persisted by the time
+ * this runs. Callers still `await` it (see auto-reply.ts) so it can't
+ * get orphaned mid-flight inside the webhook's `after()` block.
  */
-export async function sendHandoffTelegramAlert(
+export async function sendNeedsReplyTelegramAlert(
   db: SupabaseClient,
   args: {
     telegramBotToken: string
     telegramChatId: string
     conversationId: string
     contactId: string
-    summary: string
+    reason: NeedsReplyReason
+    detail: string
   },
 ): Promise<void> {
-  const { telegramBotToken, telegramChatId, conversationId, contactId, summary } = args
+  const { telegramBotToken, telegramChatId, conversationId, contactId, reason, detail } = args
   try {
     const { data: contact } = await db
       .from('contacts')
@@ -78,18 +91,44 @@ export async function sendHandoffTelegramAlert(
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/+$/, '')
     const link = siteUrl ? `\n\nAbrir: ${siteUrl}/inbox?c=${conversationId}` : ''
 
-    const text = `🙋 Cliente interesado — el bot derivó la conversación\n\nContacto: ${who}\n${summary}${link}`
+    const text = `${REASON_HEADERS[reason]}\n\nContacto: ${who}\n${detail}${link}`
 
     const result = await sendTelegramMessage(telegramBotToken, telegramChatId, text)
     if (!result.ok) {
       console.error(
-        `[ai handoff] Telegram alert failed for conversation ${conversationId}: ${result.error}`,
+        `[ai needs-reply] Telegram alert failed for conversation ${conversationId}: ${result.error}`,
       )
     }
   } catch (err) {
     console.error(
-      `[ai handoff] Telegram alert threw for conversation ${conversationId}:`,
+      `[ai needs-reply] Telegram alert threw for conversation ${conversationId}:`,
       err,
     )
   }
+}
+
+/**
+ * Quote the customer's most recent message for a "needs a human"
+ * alert that has no AI-generated handoff summary to lean on (the
+ * assigned/already-handed-off/reply-cap gates in auto-reply.ts fire
+ * before the conversation context is built). A dedicated query rather
+ * than `buildConversationContext` — this only ever runs on the
+ * notify path, so it's not worth loading the full context for it.
+ */
+export async function quoteLastCustomerMessage(
+  db: SupabaseClient,
+  conversationId: string,
+): Promise<string> {
+  const { data } = await db
+    .from('messages')
+    .select('content_text')
+    .eq('conversation_id', conversationId)
+    .eq('sender_type', 'customer')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const text = (data as { content_text: string | null } | null)?.content_text?.trim()
+  if (!text) return 'Último mensaje: (sin texto — foto, audio u otro adjunto)'
+  return `Último mensaje: "${truncate(text, MAX_QUOTE_LEN)}"`
 }

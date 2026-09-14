@@ -504,6 +504,7 @@ export async function sendMessageToConversation(
     .from('conversations')
     .update({
       last_message_text: lastMessageText,
+      last_message_sender_type: 'agent',
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })

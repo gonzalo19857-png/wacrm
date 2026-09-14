@@ -243,6 +243,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
         input.kind === 'template'
           ? (content_text ?? `[template:${input.templateName}]`)
           : input.text,
+      last_message_sender_type: 'bot',
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })

@@ -257,6 +257,7 @@ function InboxPageInner() {
                 ? {
                     ...c,
                     last_message_text: newMsg.content_text ?? "",
+                    last_message_sender_type: newMsg.sender_type,
                     last_message_at: newMsg.created_at,
                     unread_count:
                       activeConversation?.id === newMsg.conversation_id

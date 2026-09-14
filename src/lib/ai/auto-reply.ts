@@ -4,7 +4,11 @@ import { buildConversationContext } from './context'
 import { retrieveKnowledgeForMessages } from './knowledge'
 import { generateReply } from './generate'
 import { buildSystemPrompt } from './defaults'
-import { buildHandoffSummary, sendHandoffTelegramAlert } from './handoff'
+import {
+  buildHandoffSummary,
+  quoteLastCustomerMessage,
+  sendNeedsReplyTelegramAlert,
+} from './handoff'
 import {
   enforceWhatsAppEmphasis,
   stripRepeatedRecommendation,
@@ -32,12 +36,15 @@ interface DispatchArgs {
  * runner's contract: it owns its try/catch and NEVER throws — a failing
  * or slow LLM call must not affect the webhook's 200 to Meta.
  *
- * Eligibility gates (any → silent no-op):
- *   - AI off / auto-reply disabled for the account
- *   - a human agent is assigned (they own the thread)
- *   - auto-reply was disabled for this conversation (prior handoff)
- *   - the per-conversation reply cap is reached
- *   - there's nothing to reply to
+ * Eligibility gates:
+ *   - AI off / auto-reply disabled for the account → silent no-op
+ *   - a human agent is assigned (they own the thread) → Telegram
+ *     "needs a human" alert (if configured), then no-op
+ *   - auto-reply was disabled for this conversation (prior handoff) →
+ *     same alert, then no-op — covers a FOLLOW-UP customer message on
+ *     an already-handed-off thread, which nothing else announces
+ *   - the per-conversation reply cap is reached → same alert, no-op
+ *   - there's nothing to reply to → silent no-op
  *
  * The 24h WhatsApp session window is inherently open here — we're
  * reacting to a customer message that just landed — so no separate
@@ -53,6 +60,29 @@ export async function dispatchInboundToAiReply(
 
     const config = await loadAiConfig(db, accountId)
     if (!config || !config.autoReplyEnabled) return
+
+    // Awaited (not fire-and-forget) — we're inside the webhook's
+    // `after()` block, which only keeps the function alive for
+    // promises the caller can see. A detached send here could get cut
+    // off mid-flight the moment this function returns, silently
+    // dropping the one thing the alert exists to guarantee. `detail`
+    // is loaded lazily (only on the notify path) since most inbounds
+    // never reach a gate that calls this. No-op instantly when
+    // Telegram isn't configured/enabled.
+    const notifyNeedsHuman = async () => {
+      if (!config.telegramNotifyOnHandoff || !config.telegramBotToken || !config.telegramChatId) {
+        return
+      }
+      const detail = await quoteLastCustomerMessage(db, conversationId)
+      await sendNeedsReplyTelegramAlert(db, {
+        telegramBotToken: config.telegramBotToken,
+        telegramChatId: config.telegramChatId,
+        conversationId,
+        contactId,
+        reason: 'needs_human',
+        detail,
+      })
+    }
 
     // Deterministic, user-configured responders win over the LLM — the
     // caller already excludes messages a Flow consumed. Message-level
@@ -77,11 +107,27 @@ export async function dispatchInboundToAiReply(
       .eq('id', conversationId)
       .maybeSingle()
     if (convErr || !conv) return
-    if (conv.assigned_agent_id) return // a human owns this thread
-    if (conv.ai_autoreply_disabled) return // handed off / turned off here
+    if (conv.assigned_agent_id) {
+      // A human owns this thread — every message here needs their
+      // reply, not just the first one after assignment.
+      await notifyNeedsHuman()
+      return
+    }
+    if (conv.ai_autoreply_disabled) {
+      // Handed off / turned off here already. The handoff itself was
+      // announced when it happened; this is a FOLLOW-UP customer
+      // message on that same thread, which the original alert never
+      // covered — silence here is exactly the "I have to keep
+      // checking manually" gap being fixed.
+      await notifyNeedsHuman()
+      return
+    }
     // Cheap early-out; the authoritative cap check is the atomic claim
     // below (this read can race a concurrent inbound).
-    if (conv.ai_reply_count >= config.autoReplyMaxPerConversation) return
+    if (conv.ai_reply_count >= config.autoReplyMaxPerConversation) {
+      await notifyNeedsHuman()
+      return
+    }
 
     const messages = await buildConversationContext(db, conversationId)
     if (messages.length === 0) return
@@ -202,15 +248,17 @@ export async function dispatchInboundToAiReply(
       }
       await db.from('conversations').update(update).eq('id', conversationId)
 
-      // Fire-and-forget: never let a Telegram hiccup delay or fail the
-      // handoff itself, which has already been persisted above.
+      // Awaited, not fire-and-forget — see notifyNeedsHuman above. The
+      // handoff state itself is already persisted at this point either
+      // way, so a slow/failed Telegram call can't undo it.
       if (config.telegramNotifyOnHandoff && config.telegramBotToken && config.telegramChatId) {
-        void sendHandoffTelegramAlert(db, {
+        await sendNeedsReplyTelegramAlert(db, {
           telegramBotToken: config.telegramBotToken,
           telegramChatId: config.telegramChatId,
           conversationId,
           contactId,
-          summary,
+          reason: 'handoff',
+          detail: summary,
         })
       }
 
