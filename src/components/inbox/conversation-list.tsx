@@ -8,6 +8,7 @@ import {
   normalizeConversations,
 } from "@/lib/inbox/conversations";
 import { cn } from "@/lib/utils";
+import { avatarColorFor } from "@/lib/avatar-color";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
 import { Search, ChevronDown, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
@@ -406,7 +407,7 @@ export function ConversationList({
             <p className="text-sm text-muted-foreground">{t("noConversations")}</p>
           </div>
         ) : (
-          <div className="flex flex-col">
+          <div className="flex flex-col divide-y divide-border/60">
             {filtered.map((conv) => (
               <ConversationItem
                 key={conv.id}
@@ -451,21 +452,31 @@ function ConversationItem({
       })
     : "";
 
+  const avatarColor = avatarColorFor(contact?.id || displayName);
+
   return (
     <button
       onClick={handleClick}
       className={cn(
-        "flex w-full items-start gap-3 px-3 py-3 text-left transition-colors hover:bg-muted/50",
-        isActive && "border-l-2 border-primary bg-muted/70"
+        "flex w-full items-center gap-3 px-3.5 py-3.5 text-left transition-colors hover:bg-muted/50",
+        isActive
+          ? "border-l-2 border-primary bg-muted/70"
+          : "border-l-2 border-transparent",
+        isUnread && !isActive && "bg-primary/[0.03]"
       )}
     >
-      {/* Avatar */}
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
+      {/* Avatar — solid colour hashed from the contact so the same person
+          always renders the same circle, and rows are distinguishable at a
+          glance even without a real photo. */}
+      <div
+        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-base font-semibold text-white"
+        style={{ backgroundColor: avatarColor }}
+      >
         {contact?.avatar_url ? (
           <img
             src={contact.avatar_url}
             alt={displayName}
-            className="h-10 w-10 rounded-full object-cover"
+            className="h-12 w-12 rounded-full object-cover"
           />
         ) : (
           initials
@@ -485,19 +496,19 @@ function ConversationItem({
           </span>
           <span
             className={cn(
-              "shrink-0 text-[10px]",
+              "shrink-0 text-[11px]",
               isUnread
-                ? "font-semibold text-foreground"
+                ? "font-semibold text-primary"
                 : "text-muted-foreground"
             )}
           >
             {timeAgo}
           </span>
         </div>
-        <div className="mt-0.5 flex items-center justify-between gap-2">
+        <div className="mt-1 flex items-center justify-between gap-2">
           <p
             className={cn(
-              "truncate text-xs",
+              "truncate text-[13px]",
               isUnread
                 ? "font-medium text-foreground"
                 : "text-muted-foreground"
@@ -506,11 +517,6 @@ function ConversationItem({
             {conversation.last_message_text || t("noMessagesYet")}
           </p>
           <div className="flex shrink-0 items-center gap-1.5">
-            {isUnread && (
-              <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
-                {conversation.unread_count}
-              </span>
-            )}
             <span
               className={cn(
                 "h-2 w-2 rounded-full",
@@ -518,6 +524,11 @@ function ConversationItem({
               )}
               title={conversation.status}
             />
+            {isUnread && (
+              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-bold text-primary-foreground">
+                {conversation.unread_count}
+              </span>
+            )}
           </div>
         </div>
       </div>

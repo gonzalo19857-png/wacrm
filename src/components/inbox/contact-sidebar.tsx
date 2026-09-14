@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import type { Contact, Deal, ContactNote, Tag } from "@/types";
 import { addContactTag, deleteContactTag } from "@/lib/contacts/tag-api";
+import { avatarColorFor } from "@/lib/avatar-color";
 import {
   Phone,
   Mail,
@@ -182,7 +183,10 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         <div className="p-4">
           {/* Contact Info */}
           <div className="flex flex-col items-center text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted text-lg font-semibold text-foreground">
+            <div
+              className="flex h-16 w-16 items-center justify-center rounded-full text-lg font-semibold text-white"
+              style={{ backgroundColor: avatarColorFor(contact.id || displayName) }}
+            >
               {contact.avatar_url ? (
                 <img
                   src={contact.avatar_url}
