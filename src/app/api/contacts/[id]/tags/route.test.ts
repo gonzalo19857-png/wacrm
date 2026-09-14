@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({
   requireRole: vi.fn(),
   add: vi.fn(),
   remove: vi.fn(),
-  createSaleDeal: vi.fn(),
+  createSale: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/account', () => ({
@@ -19,7 +19,7 @@ vi.mock('@/lib/contacts/tag-events', () => ({
 }));
 
 vi.mock('@/lib/contacts/sale-tag', () => ({
-  createSaleDeal: mocks.createSaleDeal,
+  createSale: mocks.createSale,
 }));
 
 vi.mock('@/lib/contacts/tag-write', () => ({
@@ -73,7 +73,7 @@ beforeEach(() => {
   mocks.requireRole.mockReset();
   mocks.add.mockReset();
   mocks.remove.mockReset();
-  mocks.createSaleDeal.mockReset();
+  mocks.createSale.mockReset();
   mocks.requireRole.mockResolvedValue(context);
 });
 
@@ -117,14 +117,14 @@ describe('/api/contacts/[id]/tags', () => {
 });
 
 describe('/api/contacts/[id]/tags — sale tags (migration 045)', () => {
-  it('creates a deal when a sale tag is freshly added with a price', async () => {
+  it('creates a sale when a sale tag is freshly added with a price', async () => {
     const db = fakeDb({
       tags: { name: 'Venta', is_sale_tag: true },
       accounts: { default_currency: 'PEN' },
     });
     mocks.requireRole.mockResolvedValue({ ...context, supabase: db });
     mocks.add.mockResolvedValue({ added: true, dispatched: true });
-    mocks.createSaleDeal.mockResolvedValue({ id: 'deal-1' });
+    mocks.createSale.mockResolvedValue({ id: 'sale-1' });
 
     const response = await POST(
       request('POST', { tag_id: 'tag-1', price: 147.9 }),
@@ -133,7 +133,7 @@ describe('/api/contacts/[id]/tags — sale tags (migration 045)', () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(mocks.createSaleDeal).toHaveBeenCalledWith(db, {
+    expect(mocks.createSale).toHaveBeenCalledWith(db, {
       accountId: 'account-1',
       userId: 'user-1',
       contactId: 'contact-1',
@@ -141,10 +141,10 @@ describe('/api/contacts/[id]/tags — sale tags (migration 045)', () => {
       price: 147.9,
       currency: 'PEN',
     });
-    expect(body.dealId).toBe('deal-1');
+    expect(body.saleId).toBe('sale-1');
   });
 
-  it('does not create a deal for a non-sale tag, even with a price', async () => {
+  it('does not create a sale for a non-sale tag, even with a price', async () => {
     const db = fakeDb({ tags: { name: 'Interesado', is_sale_tag: false } });
     mocks.requireRole.mockResolvedValue({ ...context, supabase: db });
     mocks.add.mockResolvedValue({ added: true, dispatched: true });
@@ -156,11 +156,11 @@ describe('/api/contacts/[id]/tags — sale tags (migration 045)', () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(mocks.createSaleDeal).not.toHaveBeenCalled();
-    expect(body.dealId).toBeNull();
+    expect(mocks.createSale).not.toHaveBeenCalled();
+    expect(body.saleId).toBeNull();
   });
 
-  it('does not create a deal when the tag was already on the contact (duplicate)', async () => {
+  it('does not create a sale when the tag was already on the contact (duplicate)', async () => {
     const db = fakeDb({ tags: { name: 'Venta', is_sale_tag: true } });
     mocks.requireRole.mockResolvedValue({ ...context, supabase: db });
     mocks.add.mockResolvedValue({
@@ -175,15 +175,15 @@ describe('/api/contacts/[id]/tags — sale tags (migration 045)', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(mocks.createSaleDeal).not.toHaveBeenCalled();
+    expect(mocks.createSale).not.toHaveBeenCalled();
   });
 
-  it('does not create a deal when no price was sent, even for a sale tag', async () => {
+  it('does not create a sale when no price was sent, even for a sale tag', async () => {
     mocks.add.mockResolvedValue({ added: true, dispatched: true });
 
     const response = await POST(request('POST', { tag_id: 'tag-1' }), params);
 
     expect(response.status).toBe(200);
-    expect(mocks.createSaleDeal).not.toHaveBeenCalled();
+    expect(mocks.createSale).not.toHaveBeenCalled();
   });
 });

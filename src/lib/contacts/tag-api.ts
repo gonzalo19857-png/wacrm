@@ -2,8 +2,8 @@ interface ContactTagMutationResult {
   added?: boolean;
   dispatched?: boolean;
   reason?: 'duplicate' | 'max_depth';
-  /** Present when adding a "sale tag" (migration 045) created a deal. */
-  dealId?: string | null;
+  /** Present when adding a "sale tag" (migration 045) created a sale. */
+  saleId?: string | null;
 }
 
 async function mutateContactTag(

@@ -20,10 +20,10 @@ import { useTranslations } from "next-intl";
 import { SettingsPanelHead } from "./settings-panel-head";
 
 /**
- * Deals settings — account-wide default currency.
+ * Sales settings — account-wide default currency.
  *
  * One currency per account (issue #218): the chosen code seeds new
- * deals and formats every aggregated total. Existing deals keep their
+ * sales and formats every aggregated total. Existing sales keep their
  * own saved currency. Writes go straight to `accounts.default_currency`;
  * the `accounts_update` RLS policy (017) already restricts that to
  * admins+, so non-admins see a disabled, read-only control.
@@ -62,7 +62,7 @@ export function DealsSettings() {
       setSaving(false);
       return;
     }
-    // Pull the new value back into the auth context so the deal form
+    // Pull the new value back into the auth context so the sale form
     // and every total pick it up without a full reload.
     await refreshProfile();
     setSaving(false);

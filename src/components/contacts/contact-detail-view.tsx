@@ -7,7 +7,7 @@ import { SalePriceDialog } from '@/components/contacts/sale-price-dialog';
 import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency } from '@/lib/currency';
 import { toast } from 'sonner';
-import type { Contact, Tag, ContactTag, ContactNote, CustomField, ContactCustomValue, Deal, MessageTemplate } from '@/types';
+import type { Contact, Tag, ContactTag, ContactNote, CustomField, ContactCustomValue, Sale, MessageTemplate } from '@/types';
 import {
   TemplatePicker,
   type TemplateSendValues,
@@ -99,9 +99,9 @@ export function ContactDetailView({
   const [savingCustom, setSavingCustom] = useState(false);
   const [loadingCustom, setLoadingCustom] = useState(false);
 
-  // Deals tab
-  const [deals, setDeals] = useState<Deal[]>([]);
-  const [loadingDeals, setLoadingDeals] = useState(false);
+  // Sales tab
+  const [sales, setSales] = useState<Sale[]>([]);
+  const [loadingSales, setLoadingSales] = useState(false);
 
   const fetchContact = useCallback(async () => {
     if (!contactId) return;
@@ -174,16 +174,16 @@ export function ContactDetailView({
     setLoadingCustom(false);
   }, [contactId, supabase]);
 
-  const fetchDeals = useCallback(async () => {
+  const fetchSales = useCallback(async () => {
     if (!contactId) return;
-    setLoadingDeals(true);
+    setLoadingSales(true);
     const { data } = await supabase
-      .from('deals')
-      .select('*, stage:pipeline_stages(*)')
+      .from('sales')
+      .select('*')
       .eq('contact_id', contactId)
       .order('created_at', { ascending: false });
-    setDeals((data ?? []) as Deal[]);
-    setLoadingDeals(false);
+    setSales((data ?? []) as Sale[]);
+    setLoadingSales(false);
   }, [contactId, supabase]);
 
   useEffect(() => {
@@ -192,9 +192,9 @@ export function ContactDetailView({
       fetchTags();
       fetchNotes();
       fetchCustomFields();
-      fetchDeals();
+      fetchSales();
     }
-  }, [open, contactId, fetchContact, fetchTags, fetchNotes, fetchCustomFields, fetchDeals]);
+  }, [open, contactId, fetchContact, fetchTags, fetchNotes, fetchCustomFields, fetchSales]);
 
   async function copyPhone() {
     if (!contact) return;
@@ -269,9 +269,9 @@ export function ContactDetailView({
       const result = await addContactTag(contactId, salePrompt.id, price);
       setContactTagIds((prev) => [...prev, salePrompt.id]);
       onUpdated();
-      fetchDeals();
+      fetchSales();
       setSalePrompt(null);
-      if (result.dealId) {
+      if (result.saleId) {
         toast.success(tSaleTag('toastSuccess'));
       } else {
         toast.error(tSaleTag('toastFailed'));
@@ -514,10 +514,10 @@ export function ContactDetailView({
                   {t('tabs.custom')}
                 </TabsTrigger>
                 <TabsTrigger
-                  value="deals"
+                  value="sales"
                   className="data-active:bg-muted data-active:text-primary text-muted-foreground"
                 >
-                  {t('tabs.deals')}
+                  {t('tabs.sales')}
                 </TabsTrigger>
               </TabsList>
 
@@ -725,56 +725,32 @@ export function ContactDetailView({
                 )}
               </TabsContent>
 
-              {/* Deals Tab */}
-              <TabsContent value="deals" className="flex-1 overflow-y-auto px-4 py-3">
-                {loadingDeals ? (
+              {/* Sales Tab */}
+              <TabsContent value="sales" className="flex-1 overflow-y-auto px-4 py-3">
+                {loadingSales ? (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="size-5 animate-spin text-primary" />
                   </div>
-                ) : deals.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">{t('dealsTab.noDeals')}</p>
+                ) : sales.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">{t('salesTab.noSales')}</p>
                 ) : (
                   <div className="space-y-2">
-                    {deals.map((deal) => (
+                    {sales.map((sale) => (
                       <div
-                        key={deal.id}
+                        key={sale.id}
                         className="rounded-lg border border-border bg-muted/50 p-3"
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="text-sm font-medium text-foreground">
-                            {deal.title}
-                          </p>
-                          {deal.stage && (
-                            <span
-                              className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
-                              style={{
-                                backgroundColor: `${deal.stage.color}20`,
-                                color: deal.stage.color,
-                              }}
-                            >
-                              {deal.stage.name}
-                            </span>
-                          )}
-                        </div>
-                        <div className="mt-1.5 flex items-center justify-between text-xs text-muted-foreground">
+                        <p className="text-sm font-medium text-foreground">
+                          {sale.title}
+                        </p>
+                        <div className="mt-1.5 flex items-center text-xs text-muted-foreground">
                           <span className="flex items-center gap-1">
                             <DollarSign className="size-3" />
                             {formatCurrency(
-                              deal.value ?? 0,
-                              deal.currency || defaultCurrency,
+                              sale.value ?? 0,
+                              sale.currency || defaultCurrency,
                             )}
                           </span>
-                          {deal.status && deal.status !== 'open' && (
-                            <span
-                              className={
-                                deal.status === 'won'
-                                  ? 'text-primary'
-                                  : 'text-red-400'
-                              }
-                            >
-                              {deal.status}
-                            </span>
-                          )}
                         </div>
                       </div>
                     ))}

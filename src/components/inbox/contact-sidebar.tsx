@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
-import type { Contact, Deal, ContactNote, Tag } from "@/types";
+import type { Contact, Sale, ContactNote, Tag } from "@/types";
 import { addContactTag, deleteContactTag } from "@/lib/contacts/tag-api";
 import { avatarColorFor } from "@/lib/avatar-color";
 import { SalePriceDialog } from "@/components/contacts/sale-price-dialog";
@@ -42,7 +42,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
   const { accountId, defaultCurrency } = useAuth();
   const [copied, setCopied] = useState(false);
-  const [deals, setDeals] = useState<Deal[]>([]);
+  const [sales, setSales] = useState<Sale[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
   const [allTags, setAllTags] = useState<Tag[]>([]);
@@ -59,11 +59,11 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
     const supabase = createClient();
 
-    // Fetch deals, notes, and tags in parallel
-    const [dealsRes, notesRes, tagsRes] = await Promise.all([
+    // Fetch sales, notes, and tags in parallel
+    const [salesRes, notesRes, tagsRes] = await Promise.all([
       supabase
-        .from("deals")
-        .select("*, stage:pipeline_stages(*)")
+        .from("sales")
+        .select("*")
         .eq("contact_id", contact.id)
         .order("created_at", { ascending: false }),
       supabase
@@ -77,7 +77,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         .eq("contact_id", contact.id),
     ]);
 
-    if (dealsRes.data) setDeals(dealsRes.data);
+    if (salesRes.data) setSales(salesRes.data);
     if (notesRes.data) setNotes(notesRes.data);
     if (tagsRes.data) {
       const mapped = tagsRes.data
@@ -152,7 +152,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         const result = await addContactTag(contact.id, salePrompt.id, price);
         await fetchContactData();
         setSalePrompt(null);
-        if (result.dealId) {
+        if (result.saleId) {
           toast.success(tSaleTag("toastSuccess"));
         } else {
           toast.error(tSaleTag("toastFailed"));
@@ -347,40 +347,29 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
           {/* Divider */}
           <div className="my-4 border-t border-border" />
 
-          {/* Active Deals */}
+          {/* Sales */}
           <div>
             <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
               <DollarSign className="h-3 w-3" />
-              {tSidebar("deals")}
+              {tSidebar("sales")}
             </div>
             <div className="mt-2 space-y-2">
-              {deals.length === 0 ? (
-                <p className="px-1 text-xs text-muted-foreground">{tSidebar("noDeals")}</p>
+              {sales.length === 0 ? (
+                <p className="px-1 text-xs text-muted-foreground">{tSidebar("noSales")}</p>
               ) : (
-                deals.map((deal) => (
+                sales.map((sale) => (
                   <div
-                    key={deal.id}
+                    key={sale.id}
                     className="rounded-lg bg-muted px-3 py-2"
                   >
                     <p className="text-sm font-medium text-foreground">
-                      {deal.title}
+                      {sale.title}
                     </p>
                     <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
                       <span>
-                        {deal.currency ?? "$"}
-                        {deal.value.toLocaleString()}
+                        {sale.currency ?? "$"}
+                        {sale.value.toLocaleString()}
                       </span>
-                      {deal.stage && (
-                        <span
-                          className="rounded-full px-1.5 py-0.5 text-[10px]"
-                          style={{
-                            backgroundColor: `${deal.stage.color}20`,
-                            color: deal.stage.color,
-                          }}
-                        >
-                          {deal.stage.name}
-                        </span>
-                      )}
                     </div>
                   </div>
                 ))

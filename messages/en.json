@@ -20,7 +20,6 @@
     "inbox": "Inbox",
     "notifications": "Notifications",
     "contacts": "Contacts",
-    "pipelines": "Pipelines",
     "reports": "Reports",
     "broadcasts": "Broadcasts",
     "automations": "Automations",
@@ -46,7 +45,6 @@
     "inbox": "Inbox",
     "notifications": "Notifications",
     "contacts": "Contacts",
-    "pipelines": "Pipelines",
     "reports": "Reports",
     "broadcasts": "Broadcasts",
     "automations": "Automations",
@@ -72,19 +70,19 @@
   "Dashboard": {
     "page": {
       "title": "Dashboard",
-      "description": "Live analytics across conversations, contacts, deals, broadcasts, and automations.",
+      "description": "Live analytics across conversations, contacts, sales, broadcasts, and automations.",
       "activeConversations": "Active Conversations",
       "newContactsToday": "New Contacts Today",
-      "openDealsValue": "Open Deals Value",
+      "salesValueThisMonth": "Sales This Month",
       "messagesSentToday": "Messages Sent Today",
       "newTodayVsYesterday": "new today vs yesterday",
       "vsYesterday": "vs yesterday",
-      "openDeals": "{count} open {count, plural, =1 {deal} other {deals}}",
+      "salesThisMonth": "{count} {count, plural, =1 {sale} other {sales}}",
       "noChange": "No change {suffix}"
     },
     "quickActions": {
       "newContact": "New Contact",
-      "newDeal": "New Deal",
+      "viewReports": "View Reports",
       "newBroadcast": "New Broadcast",
       "newAutomation": "New Automation"
     },
@@ -92,7 +90,7 @@
       "title": "Recent Activity",
       "viewAll": "View all →",
       "noActivity": "No activity yet",
-      "noActivityHint": "Activity from messages, deals, broadcasts, and automations will appear here.",
+      "noActivityHint": "Activity from messages, sales, broadcasts, and automations will appear here.",
       "showingOf": "Showing {visible} of {totalLoaded}{plus}",
       "show": "Show",
       "timeS": "{sec}s ago",
@@ -111,15 +109,6 @@
       "tooltipIncoming": "{count} incoming",
       "tooltipOutgoing": "{count} outgoing",
       "ariaLabel": "Conversations per day"
-    },
-    "pipelineDonut": {
-      "title": "Pipeline Value",
-      "description": "Open deals by stage",
-      "noOpenDeals": "No open deals yet",
-      "noOpenDealsHint": "Create deals in Pipelines to see stage breakdowns here.",
-      "dealCount": "{count} {count, plural, =1 {deal} other {deals}}",
-      "total": "Total",
-      "ariaLabel": "Pipeline value by stage"
     },
     "responseTimeChart": {
       "title": "Average First Response Time",
@@ -287,9 +276,9 @@
       "contactInfo": "Contact info",
       "tags": "Tags",
       "notes": "Notes",
-      "deals": "Deals",
+      "sales": "Sales",
       "noTags": "No tags",
-      "noDeals": "No deals",
+      "noSales": "No sales",
       "addNotePlaceholder": "Add a note..."
     },
     "aiBanner": {
@@ -387,10 +376,9 @@
         "activity": "Activity",
         "notes": "Notes",
         "custom": "Custom Fields",
-        "deals": "Deals",
+        "sales": "Sales",
         "tags": "Tags",
       "noTags": "No tags",
-      "noDeals": "No deals",
       "addNotePlaceholder": "Add a note..."
       },
       "actions": {
@@ -420,8 +408,8 @@
         "save": "Add Note",
         "noNotes": "No notes yet."
       },
-      "dealsTab": {
-        "noDeals": "No deals yet"
+      "salesTab": {
+        "noSales": "No sales yet"
       },
       "tagsTab": {
         "clickTagDesc": "Click a tag to add or remove it from this contact.",
@@ -513,120 +501,7 @@
       "confirm": "Register",
       "errorInvalidPrice": "Enter a valid price",
       "toastSuccess": "Sale registered",
-      "toastFailed": "Couldn't register the sale — the tag was added, but no deal was created. You can add it manually in Pipelines."
-    }
-  },
-  "Pipelines": {
-    "page": {
-      "selectPipeline": "Select Pipeline",
-      "noPipelinesYet": "No pipelines yet",
-      "managePipelines": "Manage Pipelines",
-      "addPipeline": "Add Pipeline",
-      "addDeal": "Add Deal",
-      "createToStartTracking": "Create a pipeline to start tracking deals",
-      "createPipeline": "Create Pipeline",
-      "newPipeline": "New Pipeline",
-      "pipelineName": "Pipeline Name",
-      "pipelineNamePlaceholder": "e.g., Enterprise Sales",
-      "defaultStagesDesc": "Default stages (New Lead → Won) will be created automatically.",
-      "cancel": "Cancel",
-      "creating": "Creating...",
-      "createPipelineBtn": "Create Pipeline",
-      "toastFailedLoadPipelines": "Failed to load pipelines",
-      "toastFailedMoveDeal": "Failed to move deal",
-      "toastFailedCreatePipeline": "Failed to create pipeline",
-      "toastPipelineCreated": "Pipeline created",
-      "toastNotLinkedToAccount": "Your profile is not linked to an account."
-    },
-    "board": {
-      "dropDealHere": "Drop a deal here",
-      "addDeal": "Add Deal"
-    },
-    "card": {
-      "noContact": "No contact",
-      "won": "Won",
-      "lost": "Lost"
-    },
-    "form": {
-      "editDeal": "Edit Deal",
-      "newDeal": "New Deal",
-      "title": "Title",
-      "titlePlaceholder": "Deal title",
-      "contact": "Contact",
-      "selectContact": "Select a contact",
-      "linkToConversation": "Link to Conversation",
-      "value": "Value",
-      "currency": "Currency",
-      "expectedCloseDate": "Expected Close Date",
-      "stage": "Stage",
-      "assignedTo": "Assigned To",
-      "unassigned": "Unassigned",
-      "notes": "Notes",
-      "notesPlaceholder": "Add notes...",
-      "status": "Status",
-      "markAsWon": "Mark as Won",
-      "markAsLost": "Mark as Lost",
-      "reopenDeal": "Reopen deal",
-      "cancel": "Cancel",
-      "saving": "Saving...",
-      "saveChanges": "Save Changes",
-      "createDeal": "Create Deal",
-      "deletePrompt": "Delete this deal?",
-      "confirm": "Confirm",
-      "deleting": "Deleting...",
-      "deleteDeal": "Delete Deal",
-      "toastRequired": "Title, contact, and stage are required",
-      "toastFailedSave": "Failed to save deal",
-      "toastNotSignedIn": "Not signed in",
-      "toastNotLinked": "Your profile is not linked to an account.",
-      "toastFailedCreate": "Failed to create deal",
-      "toastUpdated": "Deal updated",
-      "toastCreated": "Deal created",
-      "toastFailedStatus": "Failed to update deal status",
-      "toastMarkedWon": "Marked as won",
-      "toastMarkedLost": "Marked as lost",
-      "toastReopened": "Deal reopened",
-      "toastFailedDelete": "Failed to delete deal",
-      "toastDeleted": "Deal deleted"
-    },
-    "settings": {
-      "managePipeline": "Manage Pipeline",
-      "deletePipeline": "Delete Pipeline",
-      "deletePipelineDesc": "This will archive all deals in this pipeline. This cannot be undone.",
-      "cancel": "Cancel",
-      "deleting": "Deleting...",
-      "deletePipelineBtn": "Delete Pipeline",
-      "pipelineName": "Pipeline Name",
-      "stages": "Stages",
-      "newStageNamePlaceholder": "New stage name",
-      "add": "Add",
-      "createNewPipeline": "Create a new pipeline",
-      "saving": "Saving...",
-      "saveChanges": "Save Changes",
-      "dragToReorder": "Drag to reorder",
-      "changeColor": "Change color",
-      "toastFailedSave": "Failed to save pipeline",
-      "toastSaved": "Pipeline saved",
-      "toastFailedAddStage": "Failed to add stage",
-      "toastMoveOrDeleteDeals": "Move or delete deals in this stage first",
-      "toastFailedDeleteStage": "Failed to delete stage",
-      "toastFailedDeletePipeline": "Failed to delete pipeline",
-      "toastDeleted": "Pipeline deleted"
-    },
-    "analytics": {
-      "totalDeals": "Total Deals",
-      "totalDealsTooltip": "Count of every deal in this pipeline that isn't marked as Lost. Won deals are still included.",
-      "pipelineValue": "Pipeline Value",
-      "pipelineValueTooltip": "Sum of the dollar values of all deals in this pipeline, excluding deals marked as Lost.",
-      "avgDealSize": "Avg Deal Size",
-      "avgDealSizeTooltip": "Pipeline Value divided by Total Deals — the average value of a single non-lost deal.",
-      "weightedValue": "Weighted Value",
-      "weightedValueTooltip": "Expected revenue: each open deal's value × its stage probability. First stage ≈ 10%, stages progress up to 90%, Won = 100%. Lost deals are excluded.",
-      "wonThisMonth": "Won This Month",
-      "wonThisMonthTooltip": "Deals marked as Won since the first day of the current month.",
-      "lostThisMonth": "Lost This Month",
-      "lostThisMonthTooltip": "Deals marked as Lost since the first day of the current month.",
-      "howCalculated": "How {label} is calculated"
+      "toastFailed": "Couldn't register the sale — the tag was added, but no sale was recorded."
     }
   },
   "Reports": {
@@ -650,8 +525,7 @@
         "phone": "Phone",
         "title": "Sale",
         "value": "Amount",
-        "currency": "Currency",
-        "status": "Status"
+        "currency": "Currency"
       }
     }
   },
@@ -908,7 +782,6 @@
         "remove_tag": "Remove Tag",
         "assign_conversation": "Assign Conversation",
         "update_contact_field": "Update Contact Field",
-        "create_deal": "Create Deal",
         "wait": "Wait",
         "condition": "Condition (If/Else)",
         "send_webhook": "Send Webhook",
@@ -984,17 +857,6 @@
         "select": "Select an agent…",
         "placeholder": "Agent id",
         "unknown": "{id} (unknown agent)"
-      },
-      "pipelines": {
-        "pipelineLabel": "Pipeline",
-        "pipelineIdLabel": "Pipeline id",
-        "stageLabel": "Stage",
-        "stageIdLabel": "Stage id",
-        "selectPipeline": "Select a pipeline…",
-        "selectStage": "Select a stage…",
-        "selectPipelineFirst": "Select a pipeline first…",
-        "unknownPipeline": "{id} (unknown pipeline)",
-        "unknownStage": "{id} (unknown stage)"
       },
       "templates": {
         "templateLabel": "Template",

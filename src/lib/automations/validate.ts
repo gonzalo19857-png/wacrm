@@ -96,17 +96,6 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
         issues.push({ path: `${path}.value`, message: 'field value is required' })
       }
       break
-    case 'create_deal':
-      if (!nonEmpty(c.pipeline_id)) {
-        issues.push({ path: `${path}.pipeline_id`, message: 'pipeline is required' })
-      }
-      if (!nonEmpty(c.stage_id)) {
-        issues.push({ path: `${path}.stage_id`, message: 'stage is required' })
-      }
-      if (!nonEmpty(c.title)) {
-        issues.push({ path: `${path}.title`, message: 'title is required' })
-      }
-      break
     case 'wait':
       if (typeof c.amount !== 'number' || !Number.isFinite(c.amount) || c.amount <= 0) {
         issues.push({ path: `${path}.amount`, message: 'wait amount must be greater than 0' })

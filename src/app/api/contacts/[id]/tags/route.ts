@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { requireRole, toErrorResponse } from '@/lib/auth/account';
 import { addContactTagAndDispatch } from '@/lib/contacts/tag-events';
-import { createSaleDeal } from '@/lib/contacts/sale-tag';
+import { createSale } from '@/lib/contacts/sale-tag';
 import {
   ContactTagWriteError,
   removeContactTag,
@@ -53,7 +53,7 @@ export async function POST(
     // genuine new add (never on a duplicate re-tag) and only when the
     // caller sent a price — the client is expected to have prompted
     // for it before calling this endpoint for a sale tag.
-    let dealId: string | null = null;
+    let saleId: string | null = null;
     if (result.added && price !== null) {
       const { data: tag } = await ctx.supabase
         .from('tags')
@@ -66,7 +66,7 @@ export async function POST(
           .select('default_currency')
           .eq('id', ctx.accountId)
           .maybeSingle();
-        const deal = await createSaleDeal(ctx.supabase, {
+        const sale = await createSale(ctx.supabase, {
           accountId: ctx.accountId,
           userId: ctx.userId,
           contactId,
@@ -74,11 +74,11 @@ export async function POST(
           price,
           currency: account?.default_currency ?? 'USD',
         });
-        dealId = deal?.id ?? null;
+        saleId = sale?.id ?? null;
       }
     }
 
-    return NextResponse.json({ ok: true, ...result, dealId });
+    return NextResponse.json({ ok: true, ...result, saleId });
   } catch (error) {
     if (error instanceof ContactTagWriteError) {
       return tagWriteErrorResponse(error);

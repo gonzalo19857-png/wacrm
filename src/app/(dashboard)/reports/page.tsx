@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
-import type { Deal, Contact } from "@/types";
+import type { Sale, Contact } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,7 +21,7 @@ import { Download, Loader2, FileBarChart } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
-type ReportDeal = Deal & { contact: Pick<Contact, "name" | "phone"> | null };
+type ReportSale = Sale & { contact: Pick<Contact, "name" | "phone"> | null };
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -48,24 +48,23 @@ export default function ReportsPage() {
   const today = useMemo(() => new Date(), []);
   const [from, setFrom] = useState(isoDate(startOfWeek(today)));
   const [to, setTo] = useState(isoDate(today));
-  const [deals, setDeals] = useState<ReportDeal[]>([]);
+  const [sales, setSales] = useState<ReportSale[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const fetchDeals = useCallback(async () => {
+  const fetchSales = useCallback(async () => {
     if (!accountId || !from || !to) return;
     setLoading(true);
 
     // `to` is a calendar day picked in the UI — exclusive upper bound
-    // is the *next* day at midnight, so a deal created any time on
+    // is the *next* day at midnight, so a sale created any time on
     // `to` itself is still included.
     const toExclusive = new Date(`${to}T00:00:00`);
     toExclusive.setDate(toExclusive.getDate() + 1);
 
     const { data, error } = await supabase
-      .from("deals")
+      .from("sales")
       .select("*, contact:contacts(name, phone)")
       .eq("account_id", accountId)
-      .neq("status", "lost")
       .gte("created_at", `${from}T00:00:00`)
       .lt("created_at", `${isoDate(toExclusive)}T00:00:00`)
       .order("created_at", { ascending: false });
@@ -75,27 +74,27 @@ export default function ReportsPage() {
       setLoading(false);
       return;
     }
-    setDeals((data ?? []) as ReportDeal[]);
+    setSales((data ?? []) as ReportSale[]);
     setLoading(false);
   }, [accountId, from, to, supabase, t]);
 
   useEffect(() => {
-    fetchDeals();
-  }, [fetchDeals]);
+    fetchSales();
+  }, [fetchSales]);
 
   // Grouped by currency rather than one grand total — an account that
   // ever recorded a sale in a second currency shouldn't get a total
   // that silently adds dollars to soles.
   const totalsByCurrency = useMemo(() => {
     const map: Record<string, { count: number; sum: number }> = {};
-    for (const deal of deals) {
-      const currency = deal.currency || "USD";
+    for (const sale of sales) {
+      const currency = sale.currency || "USD";
       const bucket = (map[currency] ??= { count: 0, sum: 0 });
       bucket.count += 1;
-      bucket.sum += Number(deal.value) || 0;
+      bucket.sum += Number(sale.value) || 0;
     }
     return map;
-  }, [deals]);
+  }, [sales]);
 
   function applyPreset(preset: "week" | "month" | "7d") {
     const now = new Date();
@@ -114,7 +113,7 @@ export default function ReportsPage() {
   }
 
   function handleExport() {
-    if (deals.length === 0) return;
+    if (sales.length === 0) return;
     const header = [
       t("table.date"),
       t("table.contact"),
@@ -122,16 +121,14 @@ export default function ReportsPage() {
       t("table.title"),
       t("table.value"),
       t("table.currency"),
-      t("table.status"),
     ];
-    const rows = deals.map((d) => [
-      d.created_at.slice(0, 10),
-      d.contact?.name ?? "",
-      d.contact?.phone ?? "",
-      d.title,
-      String(d.value),
-      d.currency ?? "",
-      d.status ?? "",
+    const rows = sales.map((s) => [
+      s.created_at.slice(0, 10),
+      s.contact?.name ?? "",
+      s.contact?.phone ?? "",
+      s.title,
+      String(s.value),
+      s.currency ?? "",
     ]);
     const csv = toCsv([header, ...rows]);
     downloadBlob(`ventas-${from}-a-${to}.csv`, csv);
@@ -150,7 +147,7 @@ export default function ReportsPage() {
         <Button
           variant="outline"
           onClick={handleExport}
-          disabled={deals.length === 0}
+          disabled={sales.length === 0}
           className="border-border text-muted-foreground hover:bg-muted shrink-0"
         >
           <Download className="size-4" />
@@ -220,7 +217,7 @@ export default function ReportsPage() {
       </div>
 
       {/* Detail table */}
-      {deals.length > 0 && (
+      {sales.length > 0 && (
         <div className="rounded-lg border border-border overflow-hidden">
           <Table>
             <TableHeader>
@@ -234,17 +231,17 @@ export default function ReportsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {deals.map((deal) => (
-                <TableRow key={deal.id} className="border-border">
+              {sales.map((sale) => (
+                <TableRow key={sale.id} className="border-border">
                   <TableCell className="text-muted-foreground text-xs">
-                    {deal.created_at.slice(0, 10)}
+                    {sale.created_at.slice(0, 10)}
                   </TableCell>
                   <TableCell className="text-foreground text-sm">
-                    {deal.contact?.name || deal.contact?.phone || t("unknownContact")}
+                    {sale.contact?.name || sale.contact?.phone || t("unknownContact")}
                   </TableCell>
-                  <TableCell className="text-foreground text-sm">{deal.title}</TableCell>
+                  <TableCell className="text-foreground text-sm">{sale.title}</TableCell>
                   <TableCell className="text-foreground text-sm text-right font-medium">
-                    {formatCurrency(deal.value, deal.currency)}
+                    {formatCurrency(sale.value, sale.currency)}
                   </TableCell>
                 </TableRow>
               ))}

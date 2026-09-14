@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { formatCurrency } from '@/lib/currency'
 import {
   daysAgoStart,
   DOW_SHORT_MON_FIRST,
@@ -11,8 +12,6 @@ import type {
   ActivityItem,
   ConversationsSeriesPoint,
   MetricsBundle,
-  PipelineDonutData,
-  PipelineStageSlice,
   ResponseTimeBucket,
   ResponseTimeSummary,
 } from './types'
@@ -30,8 +29,10 @@ type DB = SupabaseClient
 // --- 1. Metric cards ---------------------------------------------------
 
 export async function loadMetrics(db: DB): Promise<MetricsBundle> {
+  const now = new Date()
   const todayStart = startOfLocalDay().toISOString()
   const yesterdayStart = daysAgoStart(1).toISOString()
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
 
   const [
     openConvCur,
@@ -39,7 +40,7 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
     newConvYesterday,
     newContactsToday,
     newContactsYesterday,
-    openDeals,
+    salesThisMonth,
     messagesToday,
     messagesYesterday,
   ] = await Promise.all([
@@ -61,7 +62,7 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
       .select('id', { count: 'exact', head: true })
       .gte('created_at', yesterdayStart)
       .lt('created_at', todayStart),
-    db.from('deals').select('value, status').eq('status', 'open'),
+    db.from('sales').select('value').gte('created_at', monthStart),
     db
       .from('messages')
       .select('id', { count: 'exact', head: true })
@@ -75,8 +76,8 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
       .lt('created_at', todayStart),
   ])
 
-  const openDealsRows = (openDeals.data ?? []) as { value: number | null }[]
-  const openDealsValue = openDealsRows.reduce((sum, d) => sum + (d.value ?? 0), 0)
+  const salesRows = (salesThisMonth.data ?? []) as { value: number | null }[]
+  const salesValueThisMonth = salesRows.reduce((sum, s) => sum + (s.value ?? 0), 0)
 
   return {
     activeConversations: {
@@ -90,8 +91,8 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
       current: newContactsToday.count ?? 0,
       previous: newContactsYesterday.count ?? 0,
     },
-    openDealsValue,
-    openDealsCount: openDealsRows.length,
+    salesValueThisMonth,
+    salesCountThisMonth: salesRows.length,
     messagesSentToday: {
       current: messagesToday.count ?? 0,
       previous: messagesYesterday.count ?? 0,
@@ -126,45 +127,6 @@ export async function loadConversationsSeries(
   }
 
   return keys.map((day) => ({ day, ...(buckets.get(day) ?? { incoming: 0, outgoing: 0 }) }))
-}
-
-// --- 3. Pipeline donut -------------------------------------------------
-
-export async function loadPipelineDonut(db: DB): Promise<PipelineDonutData> {
-  const [stagesRes, dealsRes] = await Promise.all([
-    db.from('pipeline_stages').select('id, name, color, pipeline_id, position').order('position'),
-    db.from('deals').select('stage_id, value, status').eq('status', 'open'),
-  ])
-
-  const stages =
-    (stagesRes.data ?? []) as { id: string; name: string; color: string }[]
-  const deals = (dealsRes.data ?? []) as { stage_id: string; value: number | null }[]
-
-  const byStage = new Map<string, { count: number; total: number }>()
-  for (const d of deals) {
-    const row = byStage.get(d.stage_id) ?? { count: 0, total: 0 }
-    row.count += 1
-    row.total += d.value ?? 0
-    byStage.set(d.stage_id, row)
-  }
-
-  const slices: PipelineStageSlice[] = stages
-    .map((s) => ({
-      id: s.id,
-      name: s.name,
-      color: s.color || '#64748b',
-      dealCount: byStage.get(s.id)?.count ?? 0,
-      totalValue: byStage.get(s.id)?.total ?? 0,
-    }))
-    // Hide empty stages from the ring (but we'd still show them in the
-    // legend if the user wanted a full breakdown — trimming keeps the
-    // visual clean for the common case).
-    .filter((s) => s.totalValue > 0 || s.dealCount > 0)
-
-  return {
-    stages: slices,
-    totalValue: slices.reduce((sum, s) => sum + s.totalValue, 0),
-  }
 }
 
 // --- 4. Response time by day of week ----------------------------------
@@ -269,7 +231,7 @@ export async function loadActivity(db: DB, limit = 20): Promise<ActivityItem[]> 
   // Pull ~10 from each source (plenty of headroom after merge-sort),
   // then interleave by timestamp. The individual per-table limits
   // keep the payload small; the final limit is enforced after sort.
-  const [msgs, contacts, deals, broadcasts, autoLogs] = await Promise.all([
+  const [msgs, contacts, sales, broadcasts, autoLogs] = await Promise.all([
     db
       .from('messages')
       .select('id, content_text, sender_type, created_at, conversation_id, conversations(contact_id, contacts(name, phone))')
@@ -282,9 +244,9 @@ export async function loadActivity(db: DB, limit = 20): Promise<ActivityItem[]> 
       .order('created_at', { ascending: false })
       .limit(10),
     db
-      .from('deals')
-      .select('id, title, updated_at, stage:pipeline_stages(name)')
-      .order('updated_at', { ascending: false })
+      .from('sales')
+      .select('id, title, value, currency, created_at')
+      .order('created_at', { ascending: false })
       .limit(10),
     db
       .from('broadcasts')
@@ -334,21 +296,19 @@ export async function loadActivity(db: DB, limit = 20): Promise<ActivityItem[]> 
     })
   }
 
-  for (const d of (deals.data ?? []) as unknown as Array<{
+  for (const s of (sales.data ?? []) as Array<{
     id: string
     title: string
-    updated_at: string
-    stage: { name: string }[] | { name: string } | null
+    value: number
+    currency: string | null
+    created_at: string
   }>) {
-    const stage = Array.isArray(d.stage) ? d.stage[0] : d.stage
     items.push({
-      id: `deal-${d.id}`,
-      kind: 'deal',
-      text: stage?.name
-        ? `Deal "${d.title}" in ${stage.name}`
-        : `Deal "${d.title}" updated`,
-      at: d.updated_at,
-      href: '/pipelines',
+      id: `sale-${s.id}`,
+      kind: 'sale',
+      text: `Sale registered: "${s.title}" — ${formatCurrency(s.value, s.currency ?? undefined)}`,
+      at: s.created_at,
+      href: '/reports',
     })
   }
 
