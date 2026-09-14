@@ -49,6 +49,7 @@ import {
   SlidersHorizontal,
   Filter,
   X,
+  Download,
 } from 'lucide-react';
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
@@ -56,6 +57,7 @@ import { ImportModal } from '@/components/contacts/import-modal';
 import { CustomFieldsManager } from '@/components/contacts/custom-fields-manager';
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
+import { toCsv, downloadBlob } from '@/lib/export/csv';
 import { useTranslations } from 'next-intl';
 
 const PAGE_SIZE = 25;
@@ -85,6 +87,7 @@ export default function ContactsPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailContactId, setDetailContactId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [customFieldsOpen, setCustomFieldsOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
@@ -314,6 +317,85 @@ export default function ContactsPage() {
     setBulkDeleteOpen(false);
   }
 
+  // Exports every contact matching the current search + tag filter —
+  // not just the page on screen. Mirrors fetchContacts' two query
+  // paths (tag-filtered vs plain) but with a high limit instead of
+  // PAGE_SIZE pagination, since this is a one-shot download, not a
+  // paged view.
+  async function handleExportCsv() {
+    setExporting(true);
+    try {
+      const term = search.trim();
+      let rows: Contact[];
+
+      if (selectedTagIds.length > 0) {
+        const { data, error } = await supabase.rpc('filter_contacts_by_tags', {
+          p_tag_ids: selectedTagIds,
+          p_search: term || null,
+          p_limit: 10000,
+          p_offset: 0,
+        });
+        if (error) throw error;
+        rows = ((data ?? []) as { contact: Contact }[]).map((r) => r.contact);
+      } else {
+        let query = supabase
+          .from('contacts')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(10000);
+        if (term) {
+          const like = `%${term}%`;
+          query = query.or(`name.ilike.${like},phone.ilike.${like},email.ilike.${like}`);
+        }
+        const { data, error } = await query;
+        if (error) throw error;
+        rows = data ?? [];
+      }
+
+      if (rows.length === 0) {
+        toast.error(t('noContactsMatch'));
+        return;
+      }
+
+      const ids = rows.map((c) => c.id);
+      const { data: contactTags } = await supabase
+        .from('contact_tags')
+        .select('contact_id, tag_id')
+        .in('contact_id', ids);
+      const tagsByContact: Record<string, string[]> = {};
+      contactTags?.forEach((ct) => {
+        const name = tagsMap[ct.tag_id]?.name;
+        if (!name) return;
+        (tagsByContact[ct.contact_id] ??= []).push(name);
+      });
+
+      const header = [
+        t('tableColumns.name'),
+        t('tableColumns.phone'),
+        t('tableColumns.email'),
+        t('tableColumns.company'),
+        t('tableColumns.tags'),
+        t('tableColumns.createdAt'),
+      ];
+      const csvRows = rows.map((c) => [
+        c.name ?? '',
+        c.phone ?? '',
+        c.email ?? '',
+        c.company ?? '',
+        (tagsByContact[c.id] ?? []).join('; '),
+        c.created_at,
+      ]);
+      const csv = toCsv([header, ...csvRows]);
+      const dateStamp = new Date().toISOString().slice(0, 10);
+      downloadBlob(`contacts-${dateStamp}.csv`, csv);
+    } catch (err) {
+      console.error('Failed to export contacts:', err);
+      toast.error(t('toastFailedLoad'));
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
   const hasNext = page < totalPages - 1;
   const hasPrev = page > 0;
@@ -460,6 +542,20 @@ export default function ContactsPage() {
               )}
             </PopoverContent>
           </Popover>
+
+          <Button
+            variant="outline"
+            onClick={handleExportCsv}
+            disabled={exporting || totalCount === 0}
+            className="border-border text-muted-foreground hover:bg-muted shrink-0"
+          >
+            {exporting ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Download className="size-4" />
+            )}
+            {t('exportCsvBtn')}
+          </Button>
         </div>
 
         {/* Active tag-filter chips */}

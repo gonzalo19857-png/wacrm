@@ -121,6 +121,9 @@ export interface Tag {
   name: string;
   color: string;
   created_at: string;
+  /** When true, adding this tag to a contact prompts for a sale price
+   *  and creates a pipeline deal for it (migration 045). */
+  is_sale_tag?: boolean;
 }
 
 export interface ContactTag {

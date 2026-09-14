@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Plus, Tag as TagIcon, X } from 'lucide-react';
+import { CircleDollarSign, Loader2, Plus, Tag as TagIcon, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
@@ -121,6 +121,24 @@ export function TagManager() {
     }
   }
 
+  async function toggleSaleTag(tag: Tag) {
+    const next = !tag.is_sale_tag;
+    // Optimistic — this is a single boolean flip, not worth a spinner.
+    setTags((prev) =>
+      prev.map((t) => (t.id === tag.id ? { ...t, is_sale_tag: next } : t)),
+    );
+    const { error } = await supabase
+      .from('tags')
+      .update({ is_sale_tag: next })
+      .eq('id', tag.id);
+    if (error) {
+      setTags((prev) =>
+        prev.map((t) => (t.id === tag.id ? { ...t, is_sale_tag: !next } : t)),
+      );
+      toast.error(t('failedToUpdateTag'));
+    }
+  }
+
   function confirmDelete(tag: Tag) {
     setTagToDelete(tag);
     setDeleteDialogOpen(true);
@@ -173,11 +191,17 @@ export function TagManager() {
                 {tags.map((tag) => (
                   <span
                     key={tag.id}
-                    className="group inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors"
+                    className={cn(
+                      'group inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors',
+                      tag.is_sale_tag && 'ring-1 ring-offset-1 ring-offset-background',
+                    )}
                     style={{
                       backgroundColor: `${tag.color}20`,
                       color: tag.color,
                       border: `1px solid ${tag.color}40`,
+                      ...(tag.is_sale_tag
+                        ? ({ '--tw-ring-color': tag.color } as CSSProperties)
+                        : {}),
                     }}
                   >
                     <span
@@ -187,9 +211,28 @@ export function TagManager() {
                     {tag.name}
                     <button
                       type="button"
+                      onClick={() => toggleSaleTag(tag)}
+                      aria-label={
+                        tag.is_sale_tag
+                          ? t('unmarkAsSaleTagAria', { name: tag.name })
+                          : t('markAsSaleTagAria', { name: tag.name })
+                      }
+                      title={
+                        tag.is_sale_tag ? t('unmarkAsSaleTag') : t('markAsSaleTag')
+                      }
+                      aria-pressed={!!tag.is_sale_tag}
+                      className={cn(
+                        'ml-0.5 rounded-full p-0.5 transition-opacity hover:bg-black/10 dark:hover:bg-white/10',
+                        tag.is_sale_tag ? 'opacity-100' : 'opacity-40 hover:opacity-80',
+                      )}
+                    >
+                      <CircleDollarSign className="size-3" />
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => confirmDelete(tag)}
                       aria-label={t('deleteAria', { name: tag.name })}
-                      className="ml-0.5 rounded-full p-0.5 opacity-60 transition-opacity hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10"
+                      className="rounded-full p-0.5 opacity-60 transition-opacity hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10"
                     >
                       <X className="size-3" />
                     </button>

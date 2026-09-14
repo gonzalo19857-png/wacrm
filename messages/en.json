@@ -21,6 +21,7 @@
     "notifications": "Notifications",
     "contacts": "Contacts",
     "pipelines": "Pipelines",
+    "reports": "Reports",
     "broadcasts": "Broadcasts",
     "automations": "Automations",
     "flows": "Flows",
@@ -46,6 +47,7 @@
     "notifications": "Notifications",
     "contacts": "Contacts",
     "pipelines": "Pipelines",
+    "reports": "Reports",
     "broadcasts": "Broadcasts",
     "automations": "Automations",
     "settings": "Settings",
@@ -309,6 +311,7 @@
       "customFieldsBtn": "Custom fields",
       "importBtn": "Import",
       "addContactBtn": "Add Contact",
+      "exportCsvBtn": "Export CSV",
       "searchPlaceholder": "Search by name, phone, or email...",
       "filterByTags": "Filter by tags",
       "clearAll": "Clear all",
@@ -500,6 +503,17 @@
       "toastRenameFailed": "Could not rename field.",
       "toastDeleteFailed": "Could not delete field.",
       "toastDeleted": "Deleted \"{name}\"."
+    },
+    "saleTag": {
+      "title": "Register the sale",
+      "description": "You're tagging {name} with \"{tag}\". What was the sale price?",
+      "priceLabel": "Sale price",
+      "pricePlaceholder": "0.00",
+      "cancel": "Cancel",
+      "confirm": "Register",
+      "errorInvalidPrice": "Enter a valid price",
+      "toastSuccess": "Sale registered",
+      "toastFailed": "Couldn't register the sale — the tag was added, but no deal was created. You can add it manually in Pipelines."
     }
   },
   "Pipelines": {
@@ -613,6 +627,32 @@
       "lostThisMonth": "Lost This Month",
       "lostThisMonthTooltip": "Deals marked as Lost since the first day of the current month.",
       "howCalculated": "How {label} is calculated"
+    }
+  },
+  "Reports": {
+    "page": {
+      "title": "Reports",
+      "subtitle": "Sales registered in this period — total value and detail, from any date range you pick.",
+      "exportCsvBtn": "Export CSV",
+      "from": "From",
+      "to": "To",
+      "presetLast7": "Last 7 days",
+      "presetThisWeek": "This week",
+      "presetThisMonth": "This month",
+      "loading": "Loading…",
+      "noSales": "No sales registered in this period.",
+      "salesCount": "{count} {count, plural, =1 {sale} other {sales}}",
+      "unknownContact": "Unknown contact",
+      "toastFailedLoad": "Failed to load sales",
+      "table": {
+        "date": "Date",
+        "contact": "Contact",
+        "phone": "Phone",
+        "title": "Sale",
+        "value": "Amount",
+        "currency": "Currency",
+        "status": "Status"
+      }
     }
   },
   "Broadcasts": {
@@ -1321,7 +1361,12 @@
       "title": "Fields & tags",
       "description": "Two ways to organize contacts: colour-coded tags for quick grouping, and custom fields for structured data.",
       "tagsTitle": "Tags",
-      "tagsDesc": "Colour-coded labels for grouping and filtering contacts.",
+      "tagsDesc": "Colour-coded labels for grouping and filtering contacts. Click the $ on a tag to make it a sale tag — adding it to a contact then prompts for a price and registers a deal in Pipelines.",
+      "failedToUpdateTag": "Failed to update tag",
+      "markAsSaleTag": "Mark as sale tag",
+      "unmarkAsSaleTag": "Unmark as sale tag",
+      "markAsSaleTagAria": "Mark {name} as a sale tag",
+      "unmarkAsSaleTagAria": "Unmark {name} as a sale tag",
       "fieldsTitle": "Custom fields",
       "fieldsDesc": "Extra contact fields (e.g. ZIP code, lead source). They appear on every contact and in the “Update Contact Field” automation action.",
       "adminRole": "Admin",

@@ -7,6 +7,8 @@ import { cn } from "@/lib/utils";
 import type { Contact, Deal, ContactNote, Tag } from "@/types";
 import { addContactTag, deleteContactTag } from "@/lib/contacts/tag-api";
 import { avatarColorFor } from "@/lib/avatar-color";
+import { SalePriceDialog } from "@/components/contacts/sale-price-dialog";
+import { toast } from "sonner";
 import {
   Phone,
   Mail,
@@ -36,8 +38,9 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const tThread = useTranslations("Inbox.messageThread");
   const tTagsTab = useTranslations("Contacts.detailView.tagsTab");
+  const tSaleTag = useTranslations("Contacts.saleTag");
 
-  const { accountId } = useAuth();
+  const { accountId, defaultCurrency } = useAuth();
   const [copied, setCopied] = useState(false);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
@@ -46,6 +49,10 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const [savingTagId, setSavingTagId] = useState<string | null>(null);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
+  // Set when the tag just toggled on is a "sale tag" (migration 045) —
+  // opens the price prompt instead of adding the tag immediately.
+  const [salePrompt, setSalePrompt] = useState<{ id: string; name: string } | null>(null);
+  const [savingSale, setSavingSale] = useState(false);
 
   const fetchContactData = useCallback(async () => {
     if (!contact) return;
@@ -112,6 +119,16 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     async (tagId: string) => {
       if (!contact) return;
       const isSelected = tags.some((tag) => tag.id === tagId);
+      if (!isSelected) {
+        // Adding, not removing — a "sale tag" needs a price first, so
+        // open the prompt instead of adding immediately. A normal tag
+        // (or removing any tag) still toggles right away below.
+        const tag = allTags.find((t) => t.id === tagId);
+        if (tag?.is_sale_tag) {
+          setSalePrompt({ id: tag.id, name: tag.name });
+          return;
+        }
+      }
       setSavingTagId(tagId);
       try {
         if (isSelected) {
@@ -124,7 +141,29 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         setSavingTagId(null);
       }
     },
-    [contact, tags, fetchContactData]
+    [contact, tags, allTags, fetchContactData]
+  );
+
+  const handleConfirmSalePrice = useCallback(
+    async (price: number) => {
+      if (!contact || !salePrompt) return;
+      setSavingSale(true);
+      try {
+        const result = await addContactTag(contact.id, salePrompt.id, price);
+        await fetchContactData();
+        setSalePrompt(null);
+        if (result.dealId) {
+          toast.success(tSaleTag("toastSuccess"));
+        } else {
+          toast.error(tSaleTag("toastFailed"));
+        }
+      } catch {
+        toast.error(tSaleTag("toastFailed"));
+      } finally {
+        setSavingSale(false);
+      }
+    },
+    [contact, salePrompt, fetchContactData, tSaleTag]
   );
 
   const handleCopyPhone = useCallback(async () => {
@@ -396,6 +435,20 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
           </div>
         </div>
       </ScrollArea>
+
+      {salePrompt && (
+        <SalePriceDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setSalePrompt(null);
+          }}
+          tagName={salePrompt.name}
+          contactName={displayName}
+          currency={defaultCurrency}
+          saving={savingSale}
+          onConfirm={handleConfirmSalePrice}
+        />
+      )}
     </div>
   );
 }

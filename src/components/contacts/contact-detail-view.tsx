@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
+import { SalePriceDialog } from '@/components/contacts/sale-price-dialog';
 import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency } from '@/lib/currency';
 import { toast } from 'sonner';
@@ -56,6 +57,7 @@ export function ContactDetailView({
   onUpdated,
 }: ContactDetailViewProps) {
   const t = useTranslations('Contacts.detailView');
+  const tSaleTag = useTranslations('Contacts.saleTag');
   const supabase = createClient();
   const { accountId, defaultCurrency } = useAuth();
 
@@ -80,6 +82,10 @@ export function ContactDetailView({
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [contactTagIds, setContactTagIds] = useState<string[]>([]);
   const [savingTags, setSavingTags] = useState(false);
+  // Set when the tag just clicked is a "sale tag" (migration 045) —
+  // opens the price prompt instead of toggling the tag immediately.
+  const [salePrompt, setSalePrompt] = useState<{ id: string; name: string } | null>(null);
+  const [savingSale, setSavingSale] = useState(false);
 
   // Notes tab
   const [notes, setNotes] = useState<ContactNote[]>([]);
@@ -227,10 +233,20 @@ export function ContactDetailView({
 
   async function toggleTag(tagId: string) {
     if (!contactId) return;
-    setSavingTags(true);
 
     const isSelected = contactTagIds.includes(tagId);
+    if (!isSelected) {
+      // Adding, not removing — a "sale tag" needs a price first, so
+      // open the prompt instead of adding immediately. A normal tag
+      // (or removing any tag) still toggles right away below.
+      const tag = allTags.find((t) => t.id === tagId);
+      if (tag?.is_sale_tag) {
+        setSalePrompt({ id: tag.id, name: tag.name });
+        return;
+      }
+    }
 
+    setSavingTags(true);
     try {
       if (isSelected) {
         await deleteContactTag(contactId, tagId);
@@ -244,6 +260,27 @@ export function ContactDetailView({
       toast.error(error instanceof Error ? error.message : t('toastUpdateFailed'));
     }
     setSavingTags(false);
+  }
+
+  async function confirmSalePrice(price: number) {
+    if (!contactId || !salePrompt) return;
+    setSavingSale(true);
+    try {
+      const result = await addContactTag(contactId, salePrompt.id, price);
+      setContactTagIds((prev) => [...prev, salePrompt.id]);
+      onUpdated();
+      fetchDeals();
+      setSalePrompt(null);
+      if (result.dealId) {
+        toast.success(tSaleTag('toastSuccess'));
+      } else {
+        toast.error(tSaleTag('toastFailed'));
+      }
+    } catch {
+      toast.error(tSaleTag('toastFailed'));
+    } finally {
+      setSavingSale(false);
+    }
   }
 
   async function addNote() {
@@ -754,6 +791,19 @@ export function ContactDetailView({
       onOpenChange={setTemplatePickerOpen}
       onSelect={handleSendTemplate}
     />
+    {salePrompt && (
+      <SalePriceDialog
+        open
+        onOpenChange={(next) => {
+          if (!next) setSalePrompt(null);
+        }}
+        tagName={salePrompt.name}
+        contactName={contact?.name || contact?.phone || ''}
+        currency={defaultCurrency}
+        saving={savingSale}
+        onConfirm={confirmSalePrice}
+      />
+    )}
     </>
   );
 }
