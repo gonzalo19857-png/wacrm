@@ -91,6 +91,16 @@ interface WhatsAppWebhookEntry {
         status: string
         timestamp: string
         recipient_id: string
+        // Only present when status === 'failed'. Meta's actual reason a
+        // send couldn't be delivered — not persisted anywhere today
+        // (messages.status only stores the ladder state), so it's only
+        // visible via this log line.
+        errors?: Array<{
+          code: number
+          title: string
+          message?: string
+          error_data?: { details?: string }
+        }>
       }>
     }
     field: string
@@ -369,7 +379,23 @@ async function handleStatusUpdate(status: {
   status: string
   timestamp: string
   recipient_id: string
+  errors?: Array<{
+    code: number
+    title: string
+    message?: string
+    error_data?: { details?: string }
+  }>
 }) {
+  if (status.status === 'failed' && status.errors?.length) {
+    // Meta's own reason the send didn't go through. Nothing downstream
+    // persists this today (messages.status only stores the ladder
+    // state) — logging it is the only way to see it after the fact.
+    console.error(
+      `[webhook] send failed for wamid ${status.id} (recipient ${status.recipient_id}):`,
+      JSON.stringify(status.errors),
+    )
+  }
+
   // 1) Mirror onto messages (legacy behavior) — Meta's status values
   //    already match the CHECK constraint on messages.status. No
   //    `.select()`: message_id is NOT unique (migration 009 — Meta ids
