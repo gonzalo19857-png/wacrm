@@ -40,6 +40,7 @@ import {
   X,
   DollarSign,
   LayoutTemplate,
+  Pencil,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
@@ -59,7 +60,7 @@ export function ContactDetailView({
   const t = useTranslations('Contacts.detailView');
   const tSaleTag = useTranslations('Contacts.saleTag');
   const supabase = createClient();
-  const { accountId, defaultCurrency } = useAuth();
+  const { accountId, defaultCurrency, canSendMessages, canEditSettings } = useAuth();
 
   const [contact, setContact] = useState<Contact | null>(null);
   const [loading, setLoading] = useState(false);
@@ -102,6 +103,10 @@ export function ContactDetailView({
   // Sales tab
   const [sales, setSales] = useState<Sale[]>([]);
   const [loadingSales, setLoadingSales] = useState(false);
+  const [editingSaleId, setEditingSaleId] = useState<string | null>(null);
+  const [editSalePrice, setEditSalePrice] = useState('');
+  const [savingSaleEdit, setSavingSaleEdit] = useState(false);
+  const [deletingSaleId, setDeletingSaleId] = useState<string | null>(null);
 
   const fetchContact = useCallback(async () => {
     if (!contactId) return;
@@ -281,6 +286,48 @@ export function ContactDetailView({
     } finally {
       setSavingSale(false);
     }
+  }
+
+  function startEditSale(sale: Sale) {
+    setEditingSaleId(sale.id);
+    setEditSalePrice(String(sale.value));
+  }
+
+  function cancelEditSale() {
+    setEditingSaleId(null);
+    setEditSalePrice('');
+  }
+
+  async function handleSaveSaleEdit(saleId: string) {
+    const value = Number(editSalePrice);
+    if (!editSalePrice.trim() || !Number.isFinite(value) || value < 0) {
+      toast.error(t('salesTab.invalidPrice'));
+      return;
+    }
+    setSavingSaleEdit(true);
+    const { error } = await supabase.from('sales').update({ value }).eq('id', saleId);
+    setSavingSaleEdit(false);
+    if (error) {
+      toast.error(t('salesTab.updateFailed'));
+      return;
+    }
+    setSales((prev) => prev.map((s) => (s.id === saleId ? { ...s, value } : s)));
+    setEditingSaleId(null);
+    setEditSalePrice('');
+    toast.success(t('salesTab.updated'));
+  }
+
+  async function handleDeleteSale(saleId: string) {
+    if (!window.confirm(t('salesTab.deleteConfirm'))) return;
+    setDeletingSaleId(saleId);
+    const { error } = await supabase.from('sales').delete().eq('id', saleId);
+    setDeletingSaleId(null);
+    if (error) {
+      toast.error(t('salesTab.deleteFailed'));
+      return;
+    }
+    setSales((prev) => prev.filter((s) => s.id !== saleId));
+    toast.success(t('salesTab.deleted'));
   }
 
   async function addNote() {
@@ -743,15 +790,77 @@ export function ContactDetailView({
                         <p className="text-sm font-medium text-foreground">
                           {sale.title}
                         </p>
-                        <div className="mt-1.5 flex items-center text-xs text-muted-foreground">
-                          <span className="flex items-center gap-1">
-                            <DollarSign className="size-3" />
-                            {formatCurrency(
-                              sale.value ?? 0,
-                              sale.currency || defaultCurrency,
-                            )}
-                          </span>
-                        </div>
+                        {editingSaleId === sale.id ? (
+                          <div className="mt-1.5 flex items-center gap-1.5">
+                            <Input
+                              type="number"
+                              inputMode="decimal"
+                              min="0"
+                              step="0.01"
+                              autoFocus
+                              value={editSalePrice}
+                              onChange={(e) => setEditSalePrice(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveSaleEdit(sale.id);
+                                if (e.key === 'Escape') cancelEditSale();
+                              }}
+                              disabled={savingSaleEdit}
+                              className="h-7 text-xs"
+                            />
+                            <Button
+                              size="sm"
+                              className="h-7 px-2 text-xs"
+                              disabled={savingSaleEdit}
+                              onClick={() => handleSaveSaleEdit(sale.id)}
+                            >
+                              {t('salesTab.save')}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2 text-xs"
+                              disabled={savingSaleEdit}
+                              onClick={cancelEditSale}
+                            >
+                              {t('salesTab.cancel')}
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="mt-1.5 flex items-center justify-between text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <DollarSign className="size-3" />
+                              {formatCurrency(
+                                sale.value ?? 0,
+                                sale.currency || defaultCurrency,
+                              )}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              {canSendMessages && (
+                                <button
+                                  type="button"
+                                  onClick={() => startEditSale(sale)}
+                                  aria-label={t('salesTab.editAria')}
+                                  title={t('salesTab.edit')}
+                                  className="rounded p-1 text-muted-foreground hover:bg-background hover:text-foreground"
+                                >
+                                  <Pencil className="size-3" />
+                                </button>
+                              )}
+                              {canEditSettings && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteSale(sale.id)}
+                                  disabled={deletingSaleId === sale.id}
+                                  aria-label={t('salesTab.deleteAria')}
+                                  title={t('salesTab.delete')}
+                                  className="rounded p-1 text-muted-foreground hover:bg-background hover:text-destructive disabled:opacity-50"
+                                >
+                                  <Trash2 className="size-3" />
+                                </button>
+                              )}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

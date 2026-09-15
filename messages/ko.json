@@ -279,7 +279,19 @@
       "sales": "판매",
       "noTags": "태그 없음",
       "noSales": "판매 없음",
-      "addNotePlaceholder": "메모 추가..."
+      "addNotePlaceholder": "메모 추가...",
+      "save": "저장",
+      "cancel": "취소",
+      "editSale": "가격 수정",
+      "editSaleAria": "판매 가격 수정",
+      "deleteSale": "판매 삭제",
+      "deleteSaleAria": "판매 삭제",
+      "saleInvalidPrice": "올바른 가격을 입력하세요",
+      "saleUpdated": "판매가 수정되었습니다",
+      "saleUpdateFailed": "판매를 수정하지 못했습니다",
+      "saleDeleteConfirm": "이 판매를 삭제하시겠습니까? 되돌릴 수 없습니다.",
+      "saleDeleted": "판매가 삭제되었습니다",
+      "saleDeleteFailed": "판매를 삭제하지 못했습니다"
     },
     "aiBanner": {
       "pausedTitle": "이 대화에서 AI 어시스턴트가 일시 중지됨",
@@ -409,7 +421,19 @@
         "noNotes": "아직 메모가 없습니다."
       },
       "salesTab": {
-        "noSales": "아직 판매가 없습니다"
+        "noSales": "아직 판매가 없습니다",
+        "save": "저장",
+        "cancel": "취소",
+        "edit": "가격 수정",
+        "editAria": "판매 가격 수정",
+        "delete": "판매 삭제",
+        "deleteAria": "판매 삭제",
+        "invalidPrice": "올바른 가격을 입력하세요",
+        "updated": "판매가 수정되었습니다",
+        "updateFailed": "판매를 수정하지 못했습니다",
+        "deleteConfirm": "이 판매를 삭제하시겠습니까? 되돌릴 수 없습니다.",
+        "deleted": "판매가 삭제되었습니다",
+        "deleteFailed": "판매를 삭제하지 못했습니다"
       },
       "tagsTab": {
         "clickTagDesc": "태그를 클릭해 이 연락처에 추가하거나 제거하세요.",

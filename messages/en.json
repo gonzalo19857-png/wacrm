@@ -279,7 +279,19 @@
       "sales": "Sales",
       "noTags": "No tags",
       "noSales": "No sales",
-      "addNotePlaceholder": "Add a note..."
+      "addNotePlaceholder": "Add a note...",
+      "save": "Save",
+      "cancel": "Cancel",
+      "editSale": "Edit price",
+      "editSaleAria": "Edit sale price",
+      "deleteSale": "Delete sale",
+      "deleteSaleAria": "Delete sale",
+      "saleInvalidPrice": "Enter a valid price",
+      "saleUpdated": "Sale updated",
+      "saleUpdateFailed": "Couldn't update the sale",
+      "saleDeleteConfirm": "Delete this sale? This can't be undone.",
+      "saleDeleted": "Sale deleted",
+      "saleDeleteFailed": "Couldn't delete the sale"
     },
     "aiBanner": {
       "pausedTitle": "AI assistant is paused here",
@@ -409,7 +421,19 @@
         "noNotes": "No notes yet."
       },
       "salesTab": {
-        "noSales": "No sales yet"
+        "noSales": "No sales yet",
+        "save": "Save",
+        "cancel": "Cancel",
+        "edit": "Edit price",
+        "editAria": "Edit sale price",
+        "delete": "Delete sale",
+        "deleteAria": "Delete sale",
+        "invalidPrice": "Enter a valid price",
+        "updated": "Sale updated",
+        "updateFailed": "Couldn't update the sale",
+        "deleteConfirm": "Delete this sale? This can't be undone.",
+        "deleted": "Sale deleted",
+        "deleteFailed": "Couldn't delete the sale"
       },
       "tagsTab": {
         "clickTagDesc": "Click a tag to add or remove it from this contact.",

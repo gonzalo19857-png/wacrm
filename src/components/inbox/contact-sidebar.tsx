@@ -19,8 +19,11 @@ import {
   DollarSign,
   StickyNote,
   Plus,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Popover,
@@ -40,7 +43,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const tTagsTab = useTranslations("Contacts.detailView.tagsTab");
   const tSaleTag = useTranslations("Contacts.saleTag");
 
-  const { accountId, defaultCurrency } = useAuth();
+  const { accountId, defaultCurrency, canSendMessages, canEditSettings } = useAuth();
   const [copied, setCopied] = useState(false);
   const [sales, setSales] = useState<Sale[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
@@ -53,6 +56,12 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   // opens the price prompt instead of adding the tag immediately.
   const [salePrompt, setSalePrompt] = useState<{ id: string; name: string } | null>(null);
   const [savingSale, setSavingSale] = useState(false);
+  // Inline price edit on an existing sale row — id of the row being
+  // edited (null when none) plus its draft value.
+  const [editingSaleId, setEditingSaleId] = useState<string | null>(null);
+  const [editSalePrice, setEditSalePrice] = useState("");
+  const [savingSaleEdit, setSavingSaleEdit] = useState(false);
+  const [deletingSaleId, setDeletingSaleId] = useState<string | null>(null);
 
   const fetchContactData = useCallback(async () => {
     if (!contact) return;
@@ -164,6 +173,59 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
       }
     },
     [contact, salePrompt, fetchContactData, tSaleTag]
+  );
+
+  const startEditSale = useCallback((sale: Sale) => {
+    setEditingSaleId(sale.id);
+    setEditSalePrice(String(sale.value));
+  }, []);
+
+  const cancelEditSale = useCallback(() => {
+    setEditingSaleId(null);
+    setEditSalePrice("");
+  }, []);
+
+  const handleSaveSaleEdit = useCallback(
+    async (saleId: string) => {
+      const value = Number(editSalePrice);
+      if (!editSalePrice.trim() || !Number.isFinite(value) || value < 0) {
+        toast.error(tSidebar("saleInvalidPrice"));
+        return;
+      }
+      setSavingSaleEdit(true);
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("sales")
+        .update({ value })
+        .eq("id", saleId);
+      setSavingSaleEdit(false);
+      if (error) {
+        toast.error(tSidebar("saleUpdateFailed"));
+        return;
+      }
+      setSales((prev) => prev.map((s) => (s.id === saleId ? { ...s, value } : s)));
+      setEditingSaleId(null);
+      setEditSalePrice("");
+      toast.success(tSidebar("saleUpdated"));
+    },
+    [editSalePrice, tSidebar]
+  );
+
+  const handleDeleteSale = useCallback(
+    async (saleId: string) => {
+      if (!window.confirm(tSidebar("saleDeleteConfirm"))) return;
+      setDeletingSaleId(saleId);
+      const supabase = createClient();
+      const { error } = await supabase.from("sales").delete().eq("id", saleId);
+      setDeletingSaleId(null);
+      if (error) {
+        toast.error(tSidebar("saleDeleteFailed"));
+        return;
+      }
+      setSales((prev) => prev.filter((s) => s.id !== saleId));
+      toast.success(tSidebar("saleDeleted"));
+    },
+    [tSidebar]
   );
 
   const handleCopyPhone = useCallback(async () => {
@@ -365,12 +427,74 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
                     <p className="text-sm font-medium text-foreground">
                       {sale.title}
                     </p>
-                    <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
-                      <span>
-                        {sale.currency ?? "$"}
-                        {sale.value.toLocaleString()}
-                      </span>
-                    </div>
+                    {editingSaleId === sale.id ? (
+                      <div className="mt-1.5 flex items-center gap-1.5">
+                        <Input
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          step="0.01"
+                          autoFocus
+                          value={editSalePrice}
+                          onChange={(e) => setEditSalePrice(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleSaveSaleEdit(sale.id);
+                            if (e.key === "Escape") cancelEditSale();
+                          }}
+                          disabled={savingSaleEdit}
+                          className="h-7 text-xs"
+                        />
+                        <Button
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          disabled={savingSaleEdit}
+                          onClick={() => handleSaveSaleEdit(sale.id)}
+                        >
+                          {tSidebar("save")}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-xs"
+                          disabled={savingSaleEdit}
+                          onClick={cancelEditSale}
+                        >
+                          {tSidebar("cancel")}
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
+                        <span>
+                          {sale.currency ?? "$"}
+                          {sale.value.toLocaleString()}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          {canSendMessages && (
+                            <button
+                              type="button"
+                              onClick={() => startEditSale(sale)}
+                              aria-label={tSidebar("editSaleAria")}
+                              title={tSidebar("editSale")}
+                              className="rounded p-1 text-muted-foreground hover:bg-background hover:text-foreground"
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </button>
+                          )}
+                          {canEditSettings && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteSale(sale.id)}
+                              disabled={deletingSaleId === sale.id}
+                              aria-label={tSidebar("deleteSaleAria")}
+                              title={tSidebar("deleteSale")}
+                              className="rounded p-1 text-muted-foreground hover:bg-background hover:text-destructive disabled:opacity-50"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          )}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 ))
               )}
