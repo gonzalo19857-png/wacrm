@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { requireRole, toErrorResponse } from '@/lib/auth/account';
 import { addContactTagAndDispatch } from '@/lib/contacts/tag-events';
 import { createSale } from '@/lib/contacts/sale-tag';
+import { pushSaleToGoogleForm } from '@/lib/contacts/sale-form';
 import { loadAiConfig } from '@/lib/ai/config';
 import { sendNewSaleTelegramAlert } from '@/lib/ai/handoff';
 import {
@@ -79,14 +80,24 @@ export async function POST(
         });
         saleId = sale?.id ?? null;
 
-        // Best-effort Telegram DM — never let a notification failure
-        // affect the response for a sale that already saved.
+        // Fan out to whatever's configured — best-effort, never let a
+        // notification/integration failure affect the response for a
+        // sale that already saved.
         if (saleId) {
-          try {
-            const aiConfig = await loadAiConfig(ctx.supabase, ctx.accountId, {
-              requireActive: false,
-            });
-            if (aiConfig?.telegramNotifyOnSale && aiConfig.telegramBotToken && aiConfig.telegramChatId) {
+          const [aiConfig, { data: formConfig }, { data: saleContact }] = await Promise.all([
+            loadAiConfig(ctx.supabase, ctx.accountId, { requireActive: false }),
+            ctx.supabase
+              .from('sale_form_integrations')
+              .select(
+                'form_response_url, field_client_entry, field_product_entry, field_price_entry, field_phone_entry, is_active',
+              )
+              .eq('account_id', ctx.accountId)
+              .maybeSingle(),
+            ctx.supabase.from('contacts').select('name, phone').eq('id', contactId).maybeSingle(),
+          ]);
+
+          if (aiConfig?.telegramNotifyOnSale && aiConfig.telegramBotToken && aiConfig.telegramChatId) {
+            try {
               await sendNewSaleTelegramAlert(ctx.supabase, {
                 telegramBotToken: aiConfig.telegramBotToken,
                 telegramChatId: aiConfig.telegramChatId,
@@ -95,9 +106,32 @@ export async function POST(
                 value: price,
                 currency,
               });
+            } catch (err) {
+              console.error('[contacts/tags] sale Telegram alert failed:', err);
             }
-          } catch (err) {
-            console.error('[contacts/tags] sale Telegram alert failed:', err);
+          }
+
+          if (formConfig?.is_active && formConfig.form_response_url) {
+            try {
+              await pushSaleToGoogleForm(
+                {
+                  formResponseUrl: formConfig.form_response_url,
+                  fieldClientEntry: formConfig.field_client_entry,
+                  fieldProductEntry: formConfig.field_product_entry,
+                  fieldPriceEntry: formConfig.field_price_entry,
+                  fieldPhoneEntry: formConfig.field_phone_entry,
+                },
+                {
+                  title: tag.name,
+                  value: price,
+                  currency,
+                  clientName: saleContact?.name?.trim() || saleContact?.phone || 'Contacto',
+                  clientPhone: saleContact?.phone ?? '',
+                },
+              );
+            } catch (err) {
+              console.error('[contacts/tags] sale form push failed:', err);
+            }
           }
         }
       }

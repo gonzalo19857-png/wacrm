@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
-import { Coins, Loader2 } from "lucide-react";
+import { Coins, Loader2, FileSpreadsheet } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { CURRENCIES } from "@/lib/currency";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Card,
   CardContent,
@@ -69,8 +71,77 @@ export function DealsSettings() {
     toast.success(t("saveSuccess"));
   }
 
+  // ------------------------------------------------------------
+  // Google Form integration — pushes every newly-registered sale
+  // (the sale-tag price prompt) as a submission to an external Google
+  // Form, which in turn appends a row to whatever Sheet it's linked
+  // to. See supabase/migrations/048_sale_form_integration.sql.
+  // ------------------------------------------------------------
+  const [formUrl, setFormUrl] = useState("");
+  const [fieldClient, setFieldClient] = useState("");
+  const [fieldProduct, setFieldProduct] = useState("");
+  const [fieldPrice, setFieldPrice] = useState("");
+  const [fieldPhone, setFieldPhone] = useState("");
+  const [formActive, setFormActive] = useState(true);
+  const [loadingForm, setLoadingForm] = useState(true);
+  const [savingForm, setSavingForm] = useState(false);
+
+  const loadSaleForm = useCallback(async () => {
+    setLoadingForm(true);
+    try {
+      const res = await fetch("/api/settings/sale-form");
+      const data = await res.json();
+      if (data.configured) {
+        setFormUrl(data.form_response_url ?? "");
+        setFieldClient(data.field_client_entry ?? "");
+        setFieldProduct(data.field_product_entry ?? "");
+        setFieldPrice(data.field_price_entry ?? "");
+        setFieldPhone(data.field_phone_entry ?? "");
+        setFormActive(Boolean(data.is_active));
+      }
+    } finally {
+      setLoadingForm(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSaleForm();
+  }, [loadSaleForm]);
+
+  async function handleSaveSaleForm() {
+    if (!formUrl.trim()) {
+      toast.error(t("saleFormUrlRequired"));
+      return;
+    }
+    setSavingForm(true);
+    try {
+      const res = await fetch("/api/settings/sale-form", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          form_response_url: formUrl.trim(),
+          field_client_entry: fieldClient.trim(),
+          field_product_entry: fieldProduct.trim(),
+          field_price_entry: fieldPrice.trim(),
+          field_phone_entry: fieldPhone.trim(),
+          is_active: formActive,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error ?? t("saleFormSaveFailed"));
+        return;
+      }
+      toast.success(t("saleFormSaveSuccess"));
+    } catch {
+      toast.error(t("saleFormSaveFailed"));
+    } finally {
+      setSavingForm(false);
+    }
+  }
+
   return (
-    <section className="max-w-2xl animate-in fade-in-50 duration-200">
+    <section className="max-w-2xl animate-in fade-in-50 duration-200 space-y-6">
       <SettingsPanelHead
         title={t("title")}
         description={t("description")}
@@ -122,6 +193,107 @@ export function DealsSettings() {
                 t("save")
               )}
             </Button>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-foreground">
+            <FileSpreadsheet className="size-4 text-primary" />
+            {t("saleFormTitle")}
+          </CardTitle>
+          <CardDescription className="text-muted-foreground">
+            {t("saleFormDesc")}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {loadingForm ? (
+            <div className="flex items-center justify-center py-6">
+              <Loader2 className="size-5 animate-spin text-primary" />
+            </div>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <Label className="text-muted-foreground">{t("saleFormUrlLabel")}</Label>
+                <Input
+                  value={formUrl}
+                  onChange={(e) => setFormUrl(e.target.value)}
+                  placeholder={t("saleFormUrlPlaceholder")}
+                  disabled={!canEditSettings}
+                />
+                <p className="text-xs text-muted-foreground">{t("saleFormUrlHint")}</p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label className="text-muted-foreground">{t("saleFormFieldClient")}</Label>
+                  <Input
+                    value={fieldClient}
+                    onChange={(e) => setFieldClient(e.target.value)}
+                    placeholder="entry.1061967192"
+                    disabled={!canEditSettings}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-muted-foreground">{t("saleFormFieldProduct")}</Label>
+                  <Input
+                    value={fieldProduct}
+                    onChange={(e) => setFieldProduct(e.target.value)}
+                    placeholder="entry.107374042"
+                    disabled={!canEditSettings}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-muted-foreground">{t("saleFormFieldPrice")}</Label>
+                  <Input
+                    value={fieldPrice}
+                    onChange={(e) => setFieldPrice(e.target.value)}
+                    placeholder="entry.509587618"
+                    disabled={!canEditSettings}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-muted-foreground">{t("saleFormFieldPhone")}</Label>
+                  <Input
+                    value={fieldPhone}
+                    onChange={(e) => setFieldPhone(e.target.value)}
+                    placeholder="entry.1459975217"
+                    disabled={!canEditSettings}
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">{t("saleFormFieldHint")}</p>
+
+              <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+                <div>
+                  <p className="text-sm font-medium text-foreground">{t("saleFormActive")}</p>
+                  <p className="text-xs text-muted-foreground">{t("saleFormActiveDesc")}</p>
+                </div>
+                <Switch
+                  checked={formActive}
+                  onCheckedChange={setFormActive}
+                  disabled={!canEditSettings}
+                />
+              </div>
+
+              {canEditSettings && (
+                <Button
+                  onClick={handleSaveSaleForm}
+                  disabled={savingForm}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  {savingForm ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      {t("saving")}
+                    </>
+                  ) : (
+                    t("save")
+                  )}
+                </Button>
+              )}
+            </>
           )}
         </CardContent>
       </Card>

@@ -1609,7 +1609,22 @@
       "save": "저장",
       "saving": "저장 중...",
       "saveFailed": "기본 통화를 저장하지 못했습니다",
-      "saveSuccess": "기본 통화가 업데이트되었습니다"
+      "saveSuccess": "기본 통화가 업데이트되었습니다",
+      "saleFormTitle": "구글 폼으로 판매 전송",
+      "saleFormDesc": "판매가 등록될 때마다 구글 폼에 응답으로 전송합니다 — 연결된 시트에 행이 추가됩니다. 구글 계정 연결이 필요 없고, 폼 링크와 필드 ID만 있으면 됩니다.",
+      "saleFormUrlLabel": "구글 폼 링크",
+      "saleFormUrlPlaceholder": "https://docs.google.com/forms/d/e/.../viewform",
+      "saleFormUrlHint": "폼의 일반 공유/보기 링크를 붙여넣으세요 — 자동으로 변환됩니다.",
+      "saleFormFieldClient": "\"고객\" 필드 ID",
+      "saleFormFieldProduct": "\"상품\" 필드 ID",
+      "saleFormFieldPrice": "\"가격\" 필드 ID",
+      "saleFormFieldPhone": "\"전화번호\" 필드 ID",
+      "saleFormFieldHint": "각 ID는 \"entry.123456789\" 형태이며, 폼의 질문마다 하나씩 있습니다. 비워두면 해당 데이터는 전송하지 않습니다.",
+      "saleFormActive": "활성화",
+      "saleFormActiveDesc": "저장된 링크와 필드 ID를 유지한 채 전송만 일시 중지하려면 끄세요.",
+      "saleFormUrlRequired": "먼저 구글 폼 링크를 입력하세요",
+      "saleFormSaveSuccess": "판매 폼 연동이 저장되었습니다",
+      "saleFormSaveFailed": "판매 폼 연동을 저장하지 못했습니다"
     },
     "aiConfig": {
       "title": "에이전트 설정",

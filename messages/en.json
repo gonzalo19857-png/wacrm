@@ -1609,7 +1609,22 @@
       "save": "Save",
       "saving": "Saving...",
       "saveFailed": "Failed to save default currency",
-      "saveSuccess": "Default currency updated"
+      "saveSuccess": "Default currency updated",
+      "saleFormTitle": "Push sales to a Google Form",
+      "saleFormDesc": "Every time a sale is registered, send it as a submission to a Google Form — which appends a row to whatever Sheet it's linked to. No Google account connection needed, just the form's link and field IDs.",
+      "saleFormUrlLabel": "Google Form link",
+      "saleFormUrlPlaceholder": "https://docs.google.com/forms/d/e/.../viewform",
+      "saleFormUrlHint": "Paste the normal share/view link for your form — it's converted automatically.",
+      "saleFormFieldClient": "\"Client\" field id",
+      "saleFormFieldProduct": "\"Product\" field id",
+      "saleFormFieldPrice": "\"Price\" field id",
+      "saleFormFieldPhone": "\"Phone\" field id",
+      "saleFormFieldHint": "Each id looks like \"entry.123456789\" — one per question in your form. Leave a field blank to skip sending that piece of data.",
+      "saleFormActive": "Active",
+      "saleFormActiveDesc": "Turn off to pause sending without losing the saved link and field ids.",
+      "saleFormUrlRequired": "Enter the Google Form link first",
+      "saleFormSaveSuccess": "Sale form integration saved",
+      "saleFormSaveFailed": "Couldn't save the sale form integration"
     },
     "aiConfig": {
       "title": "Agent setup",
