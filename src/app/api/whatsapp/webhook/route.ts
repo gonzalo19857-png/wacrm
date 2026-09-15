@@ -572,6 +572,37 @@ async function handleReaction(
   }
 }
 
+/**
+ * Best-effort fallback identifier when Meta sends neither `contacts[].wa_id`
+ * nor `messages[].from` on an inbound delivery (see the empty-phone guard
+ * below). Confirmed against production data: decoding the `wamid.` message
+ * id Meta hands back on THAT SAME message yields an ASCII run shaped like
+ * "<2-letter country code>.<15-16 digit id>" embedded in otherwise-binary
+ * bytes — e.g. "PE.1616826183511522" — and that id is stable across a
+ * sender's repeat messages (three separate messages from the same lead all
+ * decoded to the identical id, confirming it's per-sender, not per-message).
+ * The digit count doesn't match a real phone number, which lines up with
+ * this being WhatsApp's LID (privacy-preserving identifier) system rather
+ * than a withheld MSISDN — Meta's Cloud API accepts a LID unchanged in a
+ * send's `to` field, the same as a phone number.
+ *
+ * This is reverse-engineered, not documented — `wamid` is an officially
+ * opaque token and Meta can change its internal shape without notice. Used
+ * only as a last resort, and only for correlating a sender across messages
+ * (dedup) and as a best-effort send target; never validated against
+ * isValidE164, since it isn't phone-shaped.
+ */
+function extractIdentityFromMessageId(messageId: string): string | null {
+  const b64 = messageId.replace(/^wamid\./, '')
+  try {
+    const decoded = Buffer.from(b64, 'base64').toString('latin1')
+    const match = decoded.match(/[A-Z]{2}\.(\d{10,20})/)
+    return match ? match[1] : null
+  } catch {
+    return null
+  }
+}
+
 async function processMessage(
   message: WhatsAppMessage,
   contact: { profile: { name: string }; wa_id: string },
@@ -598,17 +629,29 @@ async function processMessage(
   // became permanently unreachable — the account could see they'd
   // messaged in but never reply. Falling back to `message.from` only
   // covers the case where `wa_id` itself is somehow missing.
-  const senderPhone = normalizePhone(contact.wa_id || message.from)
+  //
+  // When BOTH are empty — heavily correlated with Instagram-attributed
+  // Click-to-WhatsApp leads — fall back to the identifier embedded in
+  // this message's own `wamid` (see extractIdentityFromMessageId). It's
+  // not a phone number, but it's stable per sender, so it at least keeps
+  // repeat messages from the same lead on one contact/conversation
+  // instead of splintering into a new one every time, and it's usable
+  // as a send target if it turns out to be a LID Meta's API accepts.
+  const rawPhone = contact.wa_id || message.from
+  const senderPhone = normalizePhone(rawPhone) || extractIdentityFromMessageId(message.id) || ''
   const contactName = contact.profile.name
 
-  if (!senderPhone) {
-    // Dump the exact raw `message` + `contact` Meta sent us. The
-    // 144-contact incident above was diagnosed after the fact from a
-    // one-line summary — by the time anyone looked, the actual payload
-    // was gone. Logging it in full here means the *next* occurrence is
-    // debuggable straight from server logs instead of guessed at again.
+  if (!normalizePhone(rawPhone)) {
+    // Dump the exact raw `message` + `contact` Meta sent us, plus whether
+    // the wamid fallback caught it. The 144-contact incident above was
+    // diagnosed after the fact from a one-line summary — by the time
+    // anyone looked, the actual payload was gone. Logging it in full here
+    // means the *next* occurrence is debuggable straight from server logs
+    // instead of guessed at again.
     console.error(
-      '[webhook] no usable phone for inbound message — raw payload:',
+      '[webhook] no usable phone for inbound message — wamid fallback:',
+      senderPhone || '(none)',
+      '— raw payload:',
       JSON.stringify({ message, contact }),
     )
   }

@@ -131,7 +131,13 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
   }
 
   const sanitized = sanitizePhoneForMeta(contact.phone)
-  if (!isValidE164(sanitized)) {
+  // A contact whose number came from the webhook's wamid fallback (see
+  // extractIdentityFromMessageId in the webhook route) is a 15-16 digit
+  // WhatsApp LID, not a phone number — it fails isValidE164's 7-15-digit
+  // E.164 shape by design. Meta's send API accepts a LID unchanged in
+  // `to`, same as a phone number, so let it through here too.
+  const isPlausibleLid = /^\d{10,20}$/.test(sanitized)
+  if (!isValidE164(sanitized) && !isPlausibleLid) {
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
 

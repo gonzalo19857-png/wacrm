@@ -243,7 +243,16 @@ export async function sendMessageToConversation(
   }
 
   const sanitizedPhone = sanitizePhoneForMeta(contact.phone);
-  if (!isValidE164(sanitizedPhone)) {
+  // A contact whose number came from the webhook's wamid fallback (see
+  // extractIdentityFromMessageId in the webhook route) is a 15-16 digit
+  // WhatsApp LID, not a phone number — it fails isValidE164's 7-15-digit
+  // E.164 shape by design. Meta's send API accepts a LID unchanged in
+  // `to`, same as a phone number, so let it through here rather than
+  // block every send to these contacts on a check that assumes MSISDN
+  // shape. Genuinely malformed input still gets caught: either by Meta's
+  // API erroring on the send below, or it's simply not all-digits.
+  const isPlausibleLid = /^\d{10,20}$/.test(sanitizedPhone);
+  if (!isValidE164(sanitizedPhone) && !isPlausibleLid) {
     throw new SendMessageError(
       'bad_request',
       'Invalid phone number format',

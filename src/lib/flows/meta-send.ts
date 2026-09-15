@@ -17,6 +17,17 @@ import {
 } from '@/lib/whatsapp/phone-utils'
 import { supabaseAdmin } from './admin-client'
 
+// A contact whose number came from the webhook's wamid fallback (see
+// extractIdentityFromMessageId in the webhook route) is a 15-16 digit
+// WhatsApp LID, not a phone number — it fails isValidE164's 7-15-digit
+// E.164 shape by design. Meta's send API accepts a LID unchanged in `to`,
+// same as a phone number, so every send helper below lets it through
+// rather than blocking every send to these contacts (including the AI
+// auto-reply bot) on a check that assumes MSISDN shape.
+function isPlausibleLid(sanitized: string): boolean {
+  return /^\d{10,20}$/.test(sanitized)
+}
+
 // ------------------------------------------------------------
 // Flows-side Meta sender (interactive variants).
 //
@@ -78,7 +89,7 @@ export async function engineSendText(
   }
 
   const sanitized = sanitizePhoneForMeta(contact.phone)
-  if (!isValidE164(sanitized)) {
+  if (!isValidE164(sanitized) && !isPlausibleLid(sanitized)) {
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
 
@@ -192,7 +203,7 @@ export async function engineSendMedia(
   }
 
   const sanitized = sanitizePhoneForMeta(contact.phone)
-  if (!isValidE164(sanitized)) {
+  if (!isValidE164(sanitized) && !isPlausibleLid(sanitized)) {
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
 
@@ -347,7 +358,7 @@ async function sendInteractiveViaMeta(
   }
 
   const sanitized = sanitizePhoneForMeta(contact.phone)
-  if (!isValidE164(sanitized)) {
+  if (!isValidE164(sanitized) && !isPlausibleLid(sanitized)) {
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
 
