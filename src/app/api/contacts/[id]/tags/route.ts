@@ -4,7 +4,6 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account';
 import { addContactTagAndDispatch } from '@/lib/contacts/tag-events';
 import { createSale } from '@/lib/contacts/sale-tag';
 import { pushSaleToGoogleForm } from '@/lib/contacts/sale-form';
-import { loadAiConfig } from '@/lib/ai/config';
 import { sendNewSaleTelegramAlert } from '@/lib/ai/handoff';
 import {
   ContactTagWriteError,
@@ -84,8 +83,7 @@ export async function POST(
         // notification/integration failure affect the response for a
         // sale that already saved.
         if (saleId) {
-          const [aiConfig, { data: formConfig }, { data: saleContact }] = await Promise.all([
-            loadAiConfig(ctx.supabase, ctx.accountId, { requireActive: false }),
+          const [{ data: formConfig }, { data: saleContact }] = await Promise.all([
             ctx.supabase
               .from('sale_form_integrations')
               .select(
@@ -96,19 +94,16 @@ export async function POST(
             ctx.supabase.from('contacts').select('name, phone').eq('id', contactId).maybeSingle(),
           ]);
 
-          if (aiConfig?.telegramNotifyOnSale && aiConfig.telegramBotToken && aiConfig.telegramChatId) {
-            try {
-              await sendNewSaleTelegramAlert(ctx.supabase, {
-                telegramBotToken: aiConfig.telegramBotToken,
-                telegramChatId: aiConfig.telegramChatId,
-                contactId,
-                title: `${tag.name}`,
-                value: price,
-                currency,
-              });
-            } catch (err) {
-              console.error('[contacts/tags] sale Telegram alert failed:', err);
-            }
+          try {
+            await sendNewSaleTelegramAlert(ctx.supabase, {
+              accountId: ctx.accountId,
+              contactId,
+              title: `${tag.name}`,
+              value: price,
+              currency,
+            });
+          } catch (err) {
+            console.error('[contacts/tags] sale Telegram alert failed:', err);
           }
 
           if (formConfig?.is_active && formConfig.form_response_url) {

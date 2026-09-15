@@ -93,10 +93,6 @@ function aiConfig(overrides: Partial<AiConfig> = {}): AiConfig {
     autoReplyMaxPerConversation: 3,
     handoffAgentId: null,
     embeddingsApiKey: null,
-    telegramBotToken: null,
-    telegramChatId: null,
-    telegramNotifyOnHandoff: false,
-    telegramNotifyOnSale: false,
     ...overrides,
   }
 }
@@ -323,13 +319,6 @@ describe('dispatchInboundToAiReply — no-reply', () => {
   })
 
   it('does NOT alert Telegram — the bot deliberately chose silence, nobody needs to jump in', async () => {
-    h.loadAiConfig.mockResolvedValue(
-      aiConfig({
-        telegramNotifyOnHandoff: true,
-        telegramBotToken: 'tok',
-        telegramChatId: 'chat-1',
-      }),
-    )
     h.generateReply.mockResolvedValue({ text: '', handoff: false, noReply: true })
     await dispatchInboundToAiReply(ARGS)
     expect(h.sendNeedsReplyTelegramAlert).not.toHaveBeenCalled()
@@ -337,23 +326,18 @@ describe('dispatchInboundToAiReply — no-reply', () => {
 })
 
 // ============================================================
-// Telegram "needs a human" alerts — was only ever fired on a FRESH
-// handoff, so a follow-up customer message on an already-handed-off
-// thread, a thread a human already owns, or one that hit the reply
-// cap, all sat silent. That silence is exactly what made the feature
-// unreliable ("avísame cuando haya que responder manualmente").
+// "Needs a human" Telegram alerts (migration 049: whether anything
+// actually sends depends on the account's `telegram_destinations`
+// rows, which is `notifyTelegramDestinations`'s concern, not this
+// layer's — here we only assert `sendNeedsReplyTelegramAlert` is
+// called, with `accountId` so it can look those rows up, on every gate
+// that used to sit silent: a follow-up message on an already-handed-
+// off thread, a thread a human already owns, or one that hit the reply
+// cap. That silence is exactly what made the feature unreliable
+// ("avísame cuando haya que responder manualmente").
 // ============================================================
 describe('dispatchInboundToAiReply — needs-human Telegram alerts', () => {
-  const withTelegram = (overrides: Partial<AiConfig> = {}) =>
-    aiConfig({
-      telegramNotifyOnHandoff: true,
-      telegramBotToken: 'tok',
-      telegramChatId: 'chat-1',
-      ...overrides,
-    })
-
   it('alerts when a human agent already owns the thread', async () => {
-    h.loadAiConfig.mockResolvedValue(withTelegram())
     h.state.conv = {
       assigned_agent_id: 'agent-9',
       ai_autoreply_disabled: false,
@@ -363,6 +347,7 @@ describe('dispatchInboundToAiReply — needs-human Telegram alerts', () => {
     expect(h.sendNeedsReplyTelegramAlert).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
+        accountId: ARGS.accountId,
         conversationId: ARGS.conversationId,
         contactId: ARGS.contactId,
         reason: 'needs_human',
@@ -372,7 +357,6 @@ describe('dispatchInboundToAiReply — needs-human Telegram alerts', () => {
   })
 
   it('alerts on a follow-up message on an already-handed-off thread', async () => {
-    h.loadAiConfig.mockResolvedValue(withTelegram())
     h.state.conv = {
       assigned_agent_id: null,
       ai_autoreply_disabled: true,
@@ -386,7 +370,7 @@ describe('dispatchInboundToAiReply — needs-human Telegram alerts', () => {
   })
 
   it('alerts when the per-conversation reply cap is reached', async () => {
-    h.loadAiConfig.mockResolvedValue(withTelegram({ autoReplyMaxPerConversation: 3 }))
+    h.loadAiConfig.mockResolvedValue(aiConfig({ autoReplyMaxPerConversation: 3 }))
     h.state.conv = {
       assigned_agent_id: null,
       ai_autoreply_disabled: false,
@@ -400,7 +384,6 @@ describe('dispatchInboundToAiReply — needs-human Telegram alerts', () => {
   })
 
   it('alerts with the AI handoff summary (not the generic quote) on a fresh handoff', async () => {
-    h.loadAiConfig.mockResolvedValue(withTelegram())
     h.generateReply.mockResolvedValue({ text: '', handoff: true })
     await dispatchInboundToAiReply(ARGS)
     expect(h.sendNeedsReplyTelegramAlert).toHaveBeenCalledWith(
@@ -415,14 +398,12 @@ describe('dispatchInboundToAiReply — needs-human Telegram alerts', () => {
     expect(h.quoteLastCustomerMessage).not.toHaveBeenCalled()
   })
 
-  it('stays silent when Telegram notify is off (default)', async () => {
-    // Default beforeEach config has telegramNotifyOnHandoff: false.
-    h.state.conv = {
-      assigned_agent_id: 'agent-9',
-      ai_autoreply_disabled: false,
-      ai_reply_count: 0,
-    }
+  it('passes through an optional handoff reason tag (e.g. "lima") for a region-specific destination', async () => {
+    h.generateReply.mockResolvedValue({ text: '', handoff: true, handoffReason: 'lima' })
     await dispatchInboundToAiReply(ARGS)
-    expect(h.sendNeedsReplyTelegramAlert).not.toHaveBeenCalled()
+    expect(h.sendNeedsReplyTelegramAlert).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ reason: 'handoff', handoffReason: 'lima' }),
+    )
   })
 })

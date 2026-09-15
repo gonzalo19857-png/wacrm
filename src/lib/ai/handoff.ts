@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ChatMessage } from './types'
-import { sendTelegramMessage } from '@/lib/telegram/send'
+import { notifyTelegramDestinations } from '@/lib/telegram/destinations'
 
 /** Longest the quoted customer message runs before we ellipsize it —
  *  keeps the internal note to a glanceable one-liner. */
@@ -67,19 +67,26 @@ const REASON_HEADERS: Record<NeedsReplyReason, string> = {
  * conversation state, which has already been persisted by the time
  * this runs. Callers still `await` it (see auto-reply.ts) so it can't
  * get orphaned mid-flight inside the webhook's `after()` block.
+ *
+ * `handoffReason` is the optional tag from `[[HANDOFF:<reason>]]`
+ * (migration 049 destinations, e.g. "lima" / "provincia") — when
+ * present, the same text is ALSO sent to that event's own
+ * destinations, in addition to the generic `needs_human` ones. Only
+ * ever set on the fresh-handoff path (auto-reply.ts has a real model
+ * output to read it from); the three early-exit gates always omit it.
  */
 export async function sendNeedsReplyTelegramAlert(
   db: SupabaseClient,
   args: {
-    telegramBotToken: string
-    telegramChatId: string
+    accountId: string
     conversationId: string
     contactId: string
     reason: NeedsReplyReason
     detail: string
+    handoffReason?: string | null
   },
 ): Promise<void> {
-  const { telegramBotToken, telegramChatId, conversationId, contactId, reason, detail } = args
+  const { accountId, conversationId, contactId, reason, detail, handoffReason } = args
   try {
     const { data: contact } = await db
       .from('contacts')
@@ -93,11 +100,12 @@ export async function sendNeedsReplyTelegramAlert(
 
     const text = `${REASON_HEADERS[reason]}\n\nContacto: ${who}\n${detail}${link}`
 
-    const result = await sendTelegramMessage(telegramBotToken, telegramChatId, text)
-    if (!result.ok) {
-      console.error(
-        `[ai needs-reply] Telegram alert failed for conversation ${conversationId}: ${result.error}`,
-      )
+    await notifyTelegramDestinations(db, accountId, 'needs_human', text)
+
+    if (handoffReason === 'lima') {
+      await notifyTelegramDestinations(db, accountId, 'handoff_lima', text)
+    } else if (handoffReason === 'provincia') {
+      await notifyTelegramDestinations(db, accountId, 'handoff_provincia', text)
     }
   } catch (err) {
     console.error(
@@ -109,24 +117,22 @@ export async function sendNeedsReplyTelegramAlert(
 
 /**
  * Best-effort Telegram DM the moment a sale is registered (migration
- * 045's sale-tag price prompt). Independent of the "needs a human"
- * alert above — same bot token/chat id, own toggle (migration 047,
- * `telegram_notify_on_sale`) — so an account can run one without the
- * other. Swallows all errors: a Telegram outage must never fail the
- * tag-add request that just registered the sale.
+ * 045's sale-tag price prompt) to every destination subscribed to the
+ * `new_sale` event (migration 049). Swallows all errors: a Telegram
+ * outage must never fail the tag-add request that just registered the
+ * sale.
  */
 export async function sendNewSaleTelegramAlert(
   db: SupabaseClient,
   args: {
-    telegramBotToken: string
-    telegramChatId: string
+    accountId: string
     contactId: string
     title: string
     value: number
     currency: string
   },
 ): Promise<void> {
-  const { telegramBotToken, telegramChatId, contactId, title, value, currency } = args
+  const { accountId, contactId, title, value, currency } = args
   try {
     const { data: contact } = await db
       .from('contacts')
@@ -140,10 +146,7 @@ export async function sendNewSaleTelegramAlert(
 
     const text = `💰 Nueva venta registrada\n\nContacto: ${who}\n${title} — ${currency} ${value.toLocaleString()}${link}`
 
-    const result = await sendTelegramMessage(telegramBotToken, telegramChatId, text)
-    if (!result.ok) {
-      console.error(`[sale] Telegram alert failed for contact ${contactId}: ${result.error}`)
-    }
+    await notifyTelegramDestinations(db, accountId, 'new_sale', text)
   } catch (err) {
     console.error(`[sale] Telegram alert threw for contact ${contactId}:`, err)
   }

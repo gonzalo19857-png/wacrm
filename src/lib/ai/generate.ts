@@ -6,7 +6,7 @@ import {
   type GenerateResult,
 } from './types'
 import {
-  HANDOFF_SENTINEL,
+  HANDOFF_SENTINEL_REGEX,
   IMAGE_SENTINEL_REGEX,
   NOREPLY_SENTINEL,
   aiRequestTimeoutMs,
@@ -74,23 +74,25 @@ export function parseGeneration(
   raw: string,
   usage: AiUsage | null = null,
 ): GenerateResult {
-  const handoff = raw.includes(HANDOFF_SENTINEL)
+  const handoffMatch = raw.match(HANDOFF_SENTINEL_REGEX)
+  const handoff = !!handoffMatch
+  const handoffReason = handoffMatch?.[1]?.toLowerCase() ?? null
   const noReply = raw.includes(NOREPLY_SENTINEL)
   const imageMatch = raw.match(IMAGE_SENTINEL_REGEX)
   const imageKey = imageMatch ? imageMatch[1].trim() : null
-  // Strip every occurrence, not just the first: IMAGE_SENTINEL_REGEX has
-  // no /g flag (match() with one wouldn't give us the capture group for
-  // imageKey above), but a non-global replace() only removes the first
-  // match — if the model ever emits the tag more than once, the rest
-  // leak into the customer-visible text. Build a fresh global copy for
-  // the strip so the extraction regex above is unaffected.
+  // Strip every occurrence, not just the first: neither regex has a /g
+  // flag (match() with one wouldn't give us the capture groups above),
+  // but a non-global replace() only removes the first match — if the
+  // model ever emits a tag more than once, the rest leak into the
+  // customer-visible text. Build fresh global copies for the strip so
+  // the extraction regexes above are unaffected.
+  const handoffSentinelGlobal = new RegExp(HANDOFF_SENTINEL_REGEX.source, 'g')
   const imageSentinelGlobal = new RegExp(IMAGE_SENTINEL_REGEX.source, 'g')
   const text = raw
-    .split(HANDOFF_SENTINEL)
-    .join('')
+    .replace(handoffSentinelGlobal, '')
     .split(NOREPLY_SENTINEL)
     .join('')
     .replace(imageSentinelGlobal, '')
     .trim()
-  return { text, handoff, noReply, imageKey, usage }
+  return { text, handoff, handoffReason, noReply, imageKey, usage }
 }

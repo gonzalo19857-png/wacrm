@@ -22,8 +22,17 @@ export const AI_PROVIDER_DEFAULT_MODEL: Record<AiProvider, string> = {
  * Sentinel the model is instructed to emit (in auto-reply mode) when it
  * can't confidently help and a human should take over. Parsed and
  * stripped by `generateReply`.
+ *
+ * Optionally carries a reason tag — `[[HANDOFF:lima]]` instead of the
+ * plain `[[HANDOFF]]` — when the business's own prompt defines specific
+ * handoff causes it wants routed to their own Telegram destination
+ * (migration 049, e.g. an order shipping to Lima vs. Provincia). The
+ * fixed scaffold below only teaches the *mechanism*; which reason
+ * keywords exist, if any, is entirely up to the account's own prompt.
  */
 export const HANDOFF_SENTINEL = '[[HANDOFF]]'
+/** Matches `[[HANDOFF]]` or `[[HANDOFF:<reason>]]`, capturing `<reason>`. */
+export const HANDOFF_SENTINEL_REGEX = /\[\[HANDOFF(?::([a-zA-Z0-9_]+))?\]\]/
 
 /**
  * Sentinel the model is instructed to emit (in auto-reply mode) when the
@@ -107,6 +116,9 @@ export function buildSystemPrompt(args: {
     )
     parts.push(
       `If the business context below defines product image keys, you may attach one specific image to your reply by adding ${IMAGE_SENTINEL_PREFIX}<key>]] on its own line — use the exact key for the specific variant your reply is about (e.g. a size you recommended), not a generic category guess. It will be stripped from what the customer sees, so never mention or describe it in your visible reply.`,
+    )
+    parts.push(
+      `If the business context below defines specific handoff reasons it wants tagged (e.g. an order shipping to a particular region), use ${HANDOFF_SENTINEL.slice(0, -2)}:<reason>]] with exactly the reason keyword it specifies, instead of the plain ${HANDOFF_SENTINEL} — but only when that business context actually names such a reason for this situation; otherwise use the plain sentinel.`,
     )
     parts.push(
       `If the business context below defines when to simply stay quiet (e.g. the customer closed out the conversation with no new question), reply with exactly ${NOREPLY_SENTINEL} and nothing else — no message will be sent, but auto-reply stays active for the customer's next message. This is different from a handoff: it does not involve a human, it's just choosing not to reply to this particular message.`,

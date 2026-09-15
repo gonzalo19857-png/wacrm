@@ -1715,6 +1715,38 @@
       "removeImage": "Remove image",
       "imageUploadFailed": "Failed to upload image.",
       "imageTooLarge": "Image is too large (max 5 MB)."
+    },
+    "telegramDestinations": {
+      "title": "Telegram destinations",
+      "description": "Register one or more Telegram bots, each subscribed to a specific event — e.g. a generic \"needs a human\" bot, plus a separate one just for orders shipping to Lima or to Provincia.",
+      "empty": "No Telegram destinations yet.",
+      "event": {
+        "needs_human": "Needs a human",
+        "new_sale": "New sale registered",
+        "handoff_lima": "Order — Lima",
+        "handoff_provincia": "Order — Provincia"
+      },
+      "addTitle": "Add a destination",
+      "label": "Label",
+      "labelPlaceholder": "e.g. Lima team",
+      "eventLabel": "Event",
+      "botToken": "Bot token",
+      "botTokenPlaceholder": "123456789:AA...",
+      "chatId": "Chat id",
+      "chatIdPlaceholder": "e.g. 987654321",
+      "add": "Add",
+      "test": "Send test message",
+      "testSuccess": "Test message sent",
+      "testFailed": "Couldn't send the test message",
+      "testMissingFields": "Enter a bot token and chat id to test",
+      "createMissingFields": "Label, bot token, and chat id are required",
+      "createFailed": "Couldn't create the destination",
+      "createSuccess": "Destination added",
+      "updateFailed": "Couldn't update the destination",
+      "deleteConfirm": "Delete \"{label}\"? This can't be undone.",
+      "deleteFailed": "Couldn't delete the destination",
+      "deleteSuccess": "Destination deleted",
+      "deleteAria": "Delete destination"
     }
   }
 }

@@ -7,10 +7,14 @@ import { sendTelegramMessage } from '@/lib/telegram/send'
 /**
  * POST /api/telegram/test  (admin+)
  *
- * "Send test" button on the AI Assistant panel: sends a real Telegram
- * message to `chat_id` using `bot_token` (or, when either is omitted,
- * the account's stored value) so an admin can confirm the bot can
- * actually reach that chat before relying on it for handoff alerts.
+ * "Send test" button on a Telegram destination (migration 049): sends
+ * a real Telegram message so an admin can confirm the bot can
+ * actually reach that chat before relying on it for alerts. Two
+ * shapes:
+ *   - `{ destination_id }` — test an already-saved destination; the
+ *     token is decrypted server-side and never sent to the client.
+ *   - `{ bot_token, chat_id }` — test one not yet saved (the admin is
+ *     still filling in the form).
  */
 export async function POST(request: Request) {
   try {
@@ -24,30 +28,30 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
     }
 
-    const rawToken =
-      typeof body.bot_token === 'string' ? body.bot_token.trim() : ''
-    const rawChatId =
-      typeof body.chat_id === 'string' ? body.chat_id.trim() : ''
+    let botToken = typeof body.bot_token === 'string' ? body.bot_token.trim() : ''
+    let chatId = typeof body.chat_id === 'string' ? body.chat_id.trim() : ''
+    const destinationId =
+      typeof body.destination_id === 'string' ? body.destination_id.trim() : ''
 
-    let botToken = rawToken
-    let chatId = rawChatId
-    if (!botToken || !chatId) {
-      const { data: existing } = await supabase
-        .from('ai_configs')
-        .select('telegram_bot_token, telegram_chat_id')
+    if (destinationId) {
+      const { data: dest } = await supabase
+        .from('telegram_destinations')
+        .select('bot_token, chat_id')
+        .eq('id', destinationId)
         .eq('account_id', accountId)
         .maybeSingle()
-      if (!botToken && existing?.telegram_bot_token) {
-        try {
-          botToken = decrypt(existing.telegram_bot_token)
-        } catch {
-          return NextResponse.json(
-            { error: 'Stored Telegram bot token could not be decrypted — re-enter it.' },
-            { status: 400 },
-          )
-        }
+      if (!dest) {
+        return NextResponse.json({ error: 'Destination not found' }, { status: 404 })
       }
-      if (!chatId && existing?.telegram_chat_id) chatId = existing.telegram_chat_id
+      try {
+        botToken = decrypt(dest.bot_token)
+      } catch {
+        return NextResponse.json(
+          { error: 'Stored Telegram bot token could not be decrypted — re-enter it.' },
+          { status: 400 },
+        )
+      }
+      chatId = chatId || dest.chat_id
     }
 
     if (!botToken || !chatId) {
@@ -60,7 +64,7 @@ export async function POST(request: Request) {
     const result = await sendTelegramMessage(
       botToken,
       chatId,
-      '✅ wacrm: este chat recibirá los avisos cuando el bot derive una conversación a un asesor.',
+      '✅ wacrm: este chat recibirá los avisos de este destino.',
     )
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: 400 })

@@ -1715,6 +1715,38 @@
       "removeImage": "이미지 제거",
       "imageUploadFailed": "이미지 업로드에 실패했습니다.",
       "imageTooLarge": "이미지가 너무 큽니다 (최대 5MB)."
+    },
+    "telegramDestinations": {
+      "title": "텔레그램 수신처",
+      "description": "각각 특정 이벤트를 구독하는 텔레그램 봇을 하나 이상 등록하세요 — 예: 일반적인 \"사람이 필요할 때\" 봇과, 리마 또는 지방 배송 주문 전용 봇을 따로 둘 수 있습니다.",
+      "empty": "아직 등록된 텔레그램 수신처가 없습니다.",
+      "event": {
+        "needs_human": "사람이 필요할 때",
+        "new_sale": "새 판매 등록",
+        "handoff_lima": "주문 — 리마",
+        "handoff_provincia": "주문 — 지방"
+      },
+      "addTitle": "수신처 추가",
+      "label": "이름",
+      "labelPlaceholder": "예: 리마 팀",
+      "eventLabel": "이벤트",
+      "botToken": "봇 토큰",
+      "botTokenPlaceholder": "123456789:AA...",
+      "chatId": "채팅 ID",
+      "chatIdPlaceholder": "예: 987654321",
+      "add": "추가",
+      "test": "테스트 메시지 보내기",
+      "testSuccess": "테스트 메시지를 보냈습니다",
+      "testFailed": "테스트 메시지를 보내지 못했습니다",
+      "testMissingFields": "테스트하려면 봇 토큰과 채팅 ID를 입력하세요",
+      "createMissingFields": "이름, 봇 토큰, 채팅 ID는 필수입니다",
+      "createFailed": "수신처를 만들지 못했습니다",
+      "createSuccess": "수신처가 추가되었습니다",
+      "updateFailed": "수신처를 수정하지 못했습니다",
+      "deleteConfirm": "\"{label}\"을(를) 삭제하시겠습니까? 되돌릴 수 없습니다.",
+      "deleteFailed": "수신처를 삭제하지 못했습니다",
+      "deleteSuccess": "수신처가 삭제되었습니다",
+      "deleteAria": "수신처 삭제"
     }
   }
 }

@@ -67,16 +67,13 @@ export async function dispatchInboundToAiReply(
     // off mid-flight the moment this function returns, silently
     // dropping the one thing the alert exists to guarantee. `detail`
     // is loaded lazily (only on the notify path) since most inbounds
-    // never reach a gate that calls this. No-op instantly when
-    // Telegram isn't configured/enabled.
+    // never reach a gate that calls this. `sendNeedsReplyTelegramAlert`
+    // itself no-ops when the account has no `needs_human` destination
+    // configured (migration 049), so there's nothing to gate here.
     const notifyNeedsHuman = async () => {
-      if (!config.telegramNotifyOnHandoff || !config.telegramBotToken || !config.telegramChatId) {
-        return
-      }
       const detail = await quoteLastCustomerMessage(db, conversationId)
       await sendNeedsReplyTelegramAlert(db, {
-        telegramBotToken: config.telegramBotToken,
-        telegramChatId: config.telegramChatId,
+        accountId,
         conversationId,
         contactId,
         reason: 'needs_human',
@@ -180,7 +177,7 @@ export async function dispatchInboundToAiReply(
       knowledge,
     })
 
-    const { text: rawText, handoff, noReply, imageKey, usage } = await generateReply({
+    const { text: rawText, handoff, handoffReason, noReply, imageKey, usage } = await generateReply({
       config,
       systemPrompt,
       messages,
@@ -250,17 +247,17 @@ export async function dispatchInboundToAiReply(
 
       // Awaited, not fire-and-forget — see notifyNeedsHuman above. The
       // handoff state itself is already persisted at this point either
-      // way, so a slow/failed Telegram call can't undo it.
-      if (config.telegramNotifyOnHandoff && config.telegramBotToken && config.telegramChatId) {
-        await sendNeedsReplyTelegramAlert(db, {
-          telegramBotToken: config.telegramBotToken,
-          telegramChatId: config.telegramChatId,
-          conversationId,
-          contactId,
-          reason: 'handoff',
-          detail: summary,
-        })
-      }
+      // way, so a slow/failed Telegram call can't undo it. `handoffReason`
+      // (from an optional `[[HANDOFF:<reason>]]`, e.g. "lima"/"provincia")
+      // additionally notifies that event's own destinations (migration 049).
+      await sendNeedsReplyTelegramAlert(db, {
+        accountId,
+        conversationId,
+        contactId,
+        reason: 'handoff',
+        detail: summary,
+        handoffReason,
+      })
 
       return
     }

@@ -29,19 +29,6 @@ export interface AiConfig {
    *  knowledge base is embedded and semantic retrieval turns on; when
    *  null, retrieval falls back to lexical full-text search. */
   embeddingsApiKey: string | null
-  /** Telegram bot token (decrypted) used to DM `telegramChatId` the
-   *  moment auto-reply hands a conversation off to a human. Null when
-   *  not configured. */
-  telegramBotToken: string | null
-  /** Target chat for the handoff alert — not a secret, stored in the
-   *  clear. A user's own numeric id (DM) or a group/channel id. */
-  telegramChatId: string | null
-  /** Master switch for the handoff alert, independent of whether the
-   *  bot token/chat id are actually set (both are still required). */
-  telegramNotifyOnHandoff: boolean
-  /** Master switch for the "new sale registered" alert (migration 047)
-   *  — same bot token/chat id as the handoff alert, toggled separately. */
-  telegramNotifyOnSale: boolean
 }
 
 /** A single conversation turn in the shape both providers accept. */
@@ -73,6 +60,11 @@ export interface GenerateResult {
   text: string
   /** True when the model asked to hand off to a human (auto-reply mode). */
   handoff: boolean
+  /** Optional reason tag from `[[HANDOFF:<reason>]]` (e.g. "lima",
+   *  "provincia") — lets the business's own prompt distinguish handoff
+   *  causes so each can notify its own Telegram destination. Null on a
+   *  plain `[[HANDOFF]]` or when there's no handoff at all. */
+  handoffReason: string | null
   /** True when the model asked to simply skip replying this turn — no
    *  human handoff, no auto-reply state change (auto-reply mode). */
   noReply: boolean

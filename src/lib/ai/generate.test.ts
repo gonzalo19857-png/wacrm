@@ -13,10 +13,6 @@ function config(overrides: Partial<AiConfig> = {}): AiConfig {
     autoReplyMaxPerConversation: 3,
     handoffAgentId: null,
     embeddingsApiKey: null,
-    telegramBotToken: null,
-    telegramChatId: null,
-    telegramNotifyOnHandoff: false,
-    telegramNotifyOnSale: false,
     ...overrides,
   }
 }
@@ -47,6 +43,7 @@ describe('parseGeneration', () => {
     expect(parseGeneration('Hello there')).toEqual({
       text: 'Hello there',
       handoff: false,
+      handoffReason: null,
       noReply: false,
       imageKey: null,
       usage: null,
@@ -57,6 +54,7 @@ describe('parseGeneration', () => {
     expect(parseGeneration('[[HANDOFF]]')).toEqual({
       text: '',
       handoff: true,
+      handoffReason: null,
       noReply: false,
       imageKey: null,
       usage: null,
@@ -64,16 +62,39 @@ describe('parseGeneration', () => {
     expect(parseGeneration('Let me get a human [[HANDOFF]]')).toEqual({
       text: 'Let me get a human',
       handoff: true,
+      handoffReason: null,
       noReply: false,
       imageKey: null,
       usage: null,
     })
   })
 
+  it('detects + strips a handoff sentinel carrying a reason tag', () => {
+    expect(parseGeneration('[[HANDOFF:lima]]')).toEqual({
+      text: '',
+      handoff: true,
+      handoffReason: 'lima',
+      noReply: false,
+      imageKey: null,
+      usage: null,
+    })
+    expect(parseGeneration('Perfecto [[HANDOFF:provincia]]')).toEqual({
+      text: 'Perfecto',
+      handoff: true,
+      handoffReason: 'provincia',
+      noReply: false,
+      imageKey: null,
+      usage: null,
+    })
+    // Case-insensitive on the way in, normalized to lowercase on the way out.
+    expect(parseGeneration('[[HANDOFF:LIMA]]').handoffReason).toBe('lima')
+  })
+
   it('detects + strips the no-reply sentinel', () => {
     expect(parseGeneration('[[NOREPLY]]')).toEqual({
       text: '',
       handoff: false,
+      handoffReason: null,
       noReply: true,
       imageKey: null,
       usage: null,
@@ -85,6 +106,7 @@ describe('parseGeneration', () => {
     expect(parseGeneration('Hi', usage)).toEqual({
       text: 'Hi',
       handoff: false,
+      handoffReason: null,
       noReply: false,
       imageKey: null,
       usage,
@@ -95,6 +117,7 @@ describe('parseGeneration', () => {
     expect(parseGeneration('Para su auto la talla L [[IMAGE:sedan-l]]')).toEqual({
       text: 'Para su auto la talla L',
       handoff: false,
+      handoffReason: null,
       noReply: false,
       imageKey: 'sedan-l',
       usage: null,
@@ -133,6 +156,7 @@ describe('generateReply — OpenAI', () => {
     expect(res).toEqual({
       text: 'Sure — happy to help!',
       handoff: false,
+      handoffReason: null,
       noReply: false,
       imageKey: null,
       usage: { promptTokens: 42, completionTokens: 8, totalTokens: 50 },
@@ -194,6 +218,7 @@ describe('generateReply — Anthropic', () => {
     expect(res).toEqual({
       text: 'Hi there!',
       handoff: false,
+      handoffReason: null,
       noReply: false,
       imageKey: null,
       usage: { promptTokens: 30, completionTokens: 6, totalTokens: 36 },
@@ -218,6 +243,23 @@ describe('generateReply — Anthropic', () => {
     })
     expect(res.handoff).toBe(true)
     expect(res.text).toBe('')
+  })
+
+  it('detects a handoff reason tag in the model output', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        okResponse({ content: [{ type: 'text', text: 'Perfecto [[HANDOFF:lima]]' }] }),
+      ),
+    )
+    const res = await generateReply({
+      config: config({ provider: 'anthropic' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'Ya di mi dirección en Lima' }],
+    })
+    expect(res.handoff).toBe(true)
+    expect(res.handoffReason).toBe('lima')
+    expect(res.text).toBe('Perfecto')
   })
 
   it('drops a leading assistant turn so the payload starts on the customer', async () => {
@@ -260,6 +302,7 @@ describe('generateReply — OpenRouter', () => {
     expect(res).toEqual({
       text: 'Sure — happy to help!',
       handoff: false,
+      handoffReason: null,
       noReply: false,
       imageKey: null,
       usage: { promptTokens: 42, completionTokens: 8, totalTokens: 50 },
