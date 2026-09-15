@@ -211,6 +211,7 @@
       "unavailable": "{label} unavailable",
       "document": "Document",
       "locationShared": "Location shared",
+      "viewOnMap": "View on map",
       "template": "Template",
       "buttonReply": "Button reply",
       "interactiveReply": "[Interactive reply]",

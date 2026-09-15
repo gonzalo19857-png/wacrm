@@ -165,13 +165,38 @@ function MessageContent({
         </div>
       );
 
-    case "location":
+    case "location": {
+      // content_text is built server-side as `[name, address, "lat,lng"]`
+      // joined by " - " (see webhook route's 'location' case) — the raw
+      // coordinates are always the trailing segment. Pull them out so we
+      // can link straight to Maps instead of showing the numbers, mirroring
+      // how WhatsApp itself turns a shared pin into an openable link.
+      const coords = message.content_text?.match(
+        /(-?\d{1,3}\.\d+),\s*(-?\d{1,3}\.\d+)\s*$/,
+      );
+      if (!coords) {
+        return (
+          <div className="flex items-center gap-2 text-sm">
+            <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span>{message.content_text || t("locationShared")}</span>
+          </div>
+        );
+      }
+      const label = message.content_text!.slice(0, coords.index).replace(/\s*-\s*$/, "").trim();
       return (
         <div className="flex items-center gap-2 text-sm">
           <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <span>{message.content_text || t("locationShared")}</span>
+          <a
+            href={`https://www.google.com/maps?q=${coords[1]},${coords[2]}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-2 hover:opacity-80"
+          >
+            {label || t("viewOnMap")}
+          </a>
         </div>
       );
+    }
 
     case "interactive": {
       // Three cases share content_type='interactive':
