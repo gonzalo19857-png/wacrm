@@ -35,9 +35,19 @@ import { useTranslations } from "next-intl";
 
 interface ContactSidebarProps {
   contact: Contact | null;
+  /**
+   * Fired after the inline "add phone number" save succeeds, with the
+   * updated row. Inbound messages from Instagram-sourced Click-to-WhatsApp
+   * leads sometimes arrive with no usable phone (Meta sends neither
+   * `wa_id` nor `from`) — the webhook still creates the contact so the
+   * lead isn't lost, but nothing can be sent to it until an agent fills
+   * the number in. Lets the parent's `activeContact` (which this panel
+   * doesn't own) pick up the edit without a full refetch.
+   */
+  onContactUpdated?: (contact: Contact) => void;
 }
 
-export function ContactSidebar({ contact }: ContactSidebarProps) {
+export function ContactSidebar({ contact, onContactUpdated }: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const tThread = useTranslations("Inbox.messageThread");
   const tTagsTab = useTranslations("Contacts.detailView.tagsTab");
@@ -238,6 +248,29 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     // fixes the `preserve-manual-memoization` lint error.
   }, [contact]);
 
+  const [phoneDraft, setPhoneDraft] = useState("");
+  const [savingPhone, setSavingPhone] = useState(false);
+
+  const handleSavePhone = useCallback(async () => {
+    if (!contact || !phoneDraft.trim()) return;
+    setSavingPhone(true);
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("contacts")
+      .update({ phone: phoneDraft.trim(), updated_at: new Date().toISOString() })
+      .eq("id", contact.id)
+      .select()
+      .single();
+    setSavingPhone(false);
+    if (error || !data) {
+      toast.error(tSidebar("phoneSaveError"));
+      return;
+    }
+    toast.success(tSidebar("phoneSaved"));
+    setPhoneDraft("");
+    onContactUpdated?.(data as Contact);
+  }, [contact, phoneDraft, onContactUpdated, tSidebar]);
+
   const handleAddNote = useCallback(async () => {
     if (!contact || !newNote.trim()) return;
     setAddingNote(true);
@@ -299,18 +332,46 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
           {/* Phone */}
           <div className="mt-4 space-y-2">
-            <button
-              onClick={handleCopyPhone}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
-            >
-              <Phone className="h-4 w-4 text-muted-foreground" />
-              <span className="flex-1 text-left">{contact.phone}</span>
-              {copied ? (
-                <Check className="h-3 w-3 text-primary" />
-              ) : (
-                <Copy className="h-3 w-3 text-muted-foreground" />
-              )}
-            </button>
+            {contact.phone ? (
+              <button
+                onClick={handleCopyPhone}
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
+              >
+                <Phone className="h-4 w-4 text-muted-foreground" />
+                <span className="flex-1 text-left">{contact.phone}</span>
+                {copied ? (
+                  <Check className="h-3 w-3 text-primary" />
+                ) : (
+                  <Copy className="h-3 w-3 text-muted-foreground" />
+                )}
+              </button>
+            ) : (
+              <div className="space-y-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                <p className="flex items-center gap-1.5 text-xs text-amber-400">
+                  <Phone className="h-3.5 w-3.5 shrink-0" />
+                  {tSidebar("noPhoneWarning")}
+                </p>
+                <div className="flex gap-1.5">
+                  <Input
+                    value={phoneDraft}
+                    onChange={(e) => setPhoneDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleSavePhone();
+                    }}
+                    placeholder={tSidebar("phonePlaceholder")}
+                    className="h-8 text-xs"
+                  />
+                  <Button
+                    size="sm"
+                    className="h-8 shrink-0"
+                    disabled={!phoneDraft.trim() || savingPhone}
+                    onClick={handleSavePhone}
+                  >
+                    {tSidebar("save")}
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {contact.email && (
               <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground">

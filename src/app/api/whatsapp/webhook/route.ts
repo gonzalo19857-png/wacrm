@@ -601,6 +601,18 @@ async function processMessage(
   const senderPhone = normalizePhone(contact.wa_id || message.from)
   const contactName = contact.profile.name
 
+  if (!senderPhone) {
+    // Dump the exact raw `message` + `contact` Meta sent us. The
+    // 144-contact incident above was diagnosed after the fact from a
+    // one-line summary — by the time anyone looked, the actual payload
+    // was gone. Logging it in full here means the *next* occurrence is
+    // debuggable straight from server logs instead of guessed at again.
+    console.error(
+      '[webhook] no usable phone for inbound message — raw payload:',
+      JSON.stringify({ message, contact }),
+    )
+  }
+
   // Find or create contact
   const contactOutcome = await findOrCreateContact(
     accountId,

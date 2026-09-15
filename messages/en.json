@@ -176,9 +176,11 @@
     "composer": {
       "draftHint": "Tap the ✨ to draft a reply with AI — you can edit it before sending",
       "sessionExpiredHint": "24-hour session expired. Use a template to re-engage.",
+      "noPhoneHint": "This contact has no phone number on file — add one in the panel on the right before you can reply.",
       "templates": "Templates",
       "readOnlyPlaceholder": "Read-only — viewers can browse but not reply",
       "sessionExpiredPlaceholder": "Session expired - use a template",
+      "noPhonePlaceholder": "Add a phone number to reply",
       "typeMessagePlaceholder": "Type a message... (Shift+Enter for new line)",
       "readOnlyTitle": "Read-only — your role can't send messages",
       "recording": "Recording… {current} / {max}",
@@ -292,7 +294,11 @@
       "saleUpdateFailed": "Couldn't update the sale",
       "saleDeleteConfirm": "Delete this sale? This can't be undone.",
       "saleDeleted": "Sale deleted",
-      "saleDeleteFailed": "Couldn't delete the sale"
+      "saleDeleteFailed": "Couldn't delete the sale",
+      "noPhoneWarning": "No phone number — can't reply until one is added.",
+      "phonePlaceholder": "Phone number",
+      "phoneSaved": "Phone number saved.",
+      "phoneSaveError": "Couldn't save the phone number."
     },
     "aiBanner": {
       "pausedTitle": "AI assistant is paused here",
