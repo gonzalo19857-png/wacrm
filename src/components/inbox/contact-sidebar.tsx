@@ -154,11 +154,11 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   );
 
   const handleConfirmSalePrice = useCallback(
-    async (price: number) => {
+    async (price: number, fecha: string) => {
       if (!contact || !salePrompt) return;
       setSavingSale(true);
       try {
-        const result = await addContactTag(contact.id, salePrompt.id, price);
+        const result = await addContactTag(contact.id, salePrompt.id, price, fecha);
         await fetchContactData();
         setSalePrompt(null);
         if (result.saleId) {
@@ -240,32 +240,23 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
   const handleAddNote = useCallback(async () => {
     if (!contact || !newNote.trim()) return;
-    if (!accountId) return;
     setAddingNote(true);
 
-    const supabase = createClient();
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    const user = session?.user;
-
-    const { data, error } = await supabase
-      .from("contact_notes")
-      .insert({
-        contact_id: contact.id,
-        account_id: accountId,
-        user_id: user?.id,
-        note_text: newNote.trim(),
-      })
-      .select()
-      .single();
-
-    if (!error && data) {
-      setNotes((prev) => [data, ...prev]);
-      setNewNote("");
+    try {
+      const res = await fetch(`/api/contacts/${contact.id}/notes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note_text: newNote.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.note) {
+        setNotes((prev) => [data.note, ...prev]);
+        setNewNote("");
+      }
+    } finally {
+      setAddingNote(false);
     }
-    setAddingNote(false);
-  }, [contact, newNote, accountId]);
+  }, [contact, newNote]);
 
   if (!contact) {
     return (

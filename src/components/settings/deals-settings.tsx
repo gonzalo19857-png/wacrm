@@ -140,6 +140,70 @@ export function DealsSettings() {
     }
   }
 
+  // ------------------------------------------------------------
+  // Live sheet webhook (migration 050) — an Apps Script Web App bound
+  // to the account's own Google Sheet, driven by the sale-tag price
+  // prompt (with date), notes, and region tags. See
+  // supabase/migrations/050_sale_sheet_webhook.sql.
+  // ------------------------------------------------------------
+  const [webhookUrl, setWebhookUrl] = useState("");
+  const [webhookSecret, setWebhookSecret] = useState("");
+  const [webhookSecretEdited, setWebhookSecretEdited] = useState(false);
+  const [hasStoredWebhookSecret, setHasStoredWebhookSecret] = useState(false);
+  const [webhookActive, setWebhookActive] = useState(true);
+  const [loadingWebhook, setLoadingWebhook] = useState(true);
+  const [savingWebhook, setSavingWebhook] = useState(false);
+
+  const loadSheetWebhook = useCallback(async () => {
+    setLoadingWebhook(true);
+    try {
+      const res = await fetch("/api/settings/sale-sheet-webhook");
+      const data = await res.json();
+      if (data.configured) {
+        setWebhookUrl(data.webhook_url ?? "");
+        setHasStoredWebhookSecret(Boolean(data.has_secret));
+        setWebhookActive(Boolean(data.is_active));
+      }
+    } finally {
+      setLoadingWebhook(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSheetWebhook();
+  }, [loadSheetWebhook]);
+
+  async function handleSaveSheetWebhook() {
+    if (!webhookUrl.trim()) {
+      toast.error(t("sheetWebhookUrlRequired"));
+      return;
+    }
+    setSavingWebhook(true);
+    try {
+      const res = await fetch("/api/settings/sale-sheet-webhook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          webhook_url: webhookUrl.trim(),
+          secret: webhookSecretEdited ? webhookSecret.trim() : undefined,
+          is_active: webhookActive,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error ?? t("sheetWebhookSaveFailed"));
+        return;
+      }
+      toast.success(t("sheetWebhookSaveSuccess"));
+      setWebhookSecretEdited(false);
+      await loadSheetWebhook();
+    } catch {
+      toast.error(t("sheetWebhookSaveFailed"));
+    } finally {
+      setSavingWebhook(false);
+    }
+  }
+
   return (
     <section className="max-w-2xl animate-in fade-in-50 duration-200 space-y-6">
       <SettingsPanelHead
@@ -284,6 +348,92 @@ export function DealsSettings() {
                   className="bg-primary text-primary-foreground hover:bg-primary/90"
                 >
                   {savingForm ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      {t("saving")}
+                    </>
+                  ) : (
+                    t("save")
+                  )}
+                </Button>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-foreground">
+            <FileSpreadsheet className="size-4 text-primary" />
+            {t("sheetWebhookTitle")}
+          </CardTitle>
+          <CardDescription className="text-muted-foreground">
+            {t("sheetWebhookDesc")}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {loadingWebhook ? (
+            <div className="flex items-center justify-center py-6">
+              <Loader2 className="size-5 animate-spin text-primary" />
+            </div>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <Label className="text-muted-foreground">{t("sheetWebhookUrlLabel")}</Label>
+                <Input
+                  value={webhookUrl}
+                  onChange={(e) => setWebhookUrl(e.target.value)}
+                  placeholder={t("sheetWebhookUrlPlaceholder")}
+                  disabled={!canEditSettings}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-muted-foreground">{t("sheetWebhookSecretLabel")}</Label>
+                <Input
+                  type="password"
+                  value={webhookSecret}
+                  onChange={(e) => {
+                    setWebhookSecret(e.target.value);
+                    setWebhookSecretEdited(true);
+                  }}
+                  onFocus={() => {
+                    if (!webhookSecretEdited && hasStoredWebhookSecret) {
+                      setWebhookSecret("");
+                      setWebhookSecretEdited(true);
+                    }
+                  }}
+                  placeholder={
+                    hasStoredWebhookSecret
+                      ? t("sheetWebhookSecretStoredPlaceholder")
+                      : t("sheetWebhookSecretPlaceholder")
+                  }
+                  disabled={!canEditSettings}
+                  autoComplete="off"
+                />
+                <p className="text-xs text-muted-foreground">{t("sheetWebhookSecretHint")}</p>
+              </div>
+
+              <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+                <div>
+                  <p className="text-sm font-medium text-foreground">{t("sheetWebhookActive")}</p>
+                  <p className="text-xs text-muted-foreground">{t("sheetWebhookActiveDesc")}</p>
+                </div>
+                <Switch
+                  checked={webhookActive}
+                  onCheckedChange={setWebhookActive}
+                  disabled={!canEditSettings}
+                />
+              </div>
+
+              {canEditSettings && (
+                <Button
+                  onClick={handleSaveSheetWebhook}
+                  disabled={savingWebhook}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  {savingWebhook ? (
                     <>
                       <Loader2 className="size-4 animate-spin" />
                       {t("saving")}

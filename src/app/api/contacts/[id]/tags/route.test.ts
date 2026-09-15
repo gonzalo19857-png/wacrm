@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   add: vi.fn(),
   remove: vi.fn(),
   createSale: vi.fn(),
+  pushSetRegion: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/account', () => ({
@@ -22,6 +23,10 @@ vi.mock('@/lib/contacts/sale-tag', () => ({
   createSale: mocks.createSale,
 }));
 
+vi.mock('@/lib/contacts/sale-sheet', () => ({
+  pushSetRegion: mocks.pushSetRegion,
+}));
+
 vi.mock('@/lib/contacts/tag-write', () => ({
   ContactTagWriteError: class ContactTagWriteError extends Error {
     status: number;
@@ -35,8 +40,28 @@ vi.mock('@/lib/contacts/tag-write', () => ({
 
 import { DELETE, POST } from './route';
 
+/** Minimal `.from(table).select().eq().maybeSingle()` stub keyed by table.
+ *  Every POST now looks up the tag (for `region_value`) as soon as it's
+ *  freshly added, regardless of price, so every context needs a usable
+ *  `.from()` even in tests that aren't about sale tags. */
+function fakeDb(rows: Record<string, unknown>) {
+  return {
+    name: 'scoped-client',
+    from(table: string) {
+      return {
+        select: () => ({
+          eq: () => ({
+            maybeSingle: () =>
+              Promise.resolve({ data: rows[table] ?? null, error: null }),
+          }),
+        }),
+      };
+    },
+  };
+}
+
 const context = {
-  supabase: { name: 'scoped-client' },
+  supabase: fakeDb({}),
   accountId: 'account-1',
   userId: 'user-1',
   role: 'agent',
@@ -53,27 +78,12 @@ function request(method: 'POST' | 'DELETE', body: unknown) {
 
 const params = { params: Promise.resolve({ id: 'contact-1' }) };
 
-/** Minimal `.from(table).select().eq().maybeSingle()` stub keyed by table. */
-function fakeDb(rows: Record<string, unknown>) {
-  return {
-    from(table: string) {
-      return {
-        select: () => ({
-          eq: () => ({
-            maybeSingle: () =>
-              Promise.resolve({ data: rows[table] ?? null, error: null }),
-          }),
-        }),
-      };
-    },
-  };
-}
-
 beforeEach(() => {
   mocks.requireRole.mockReset();
   mocks.add.mockReset();
   mocks.remove.mockReset();
   mocks.createSale.mockReset();
+  mocks.pushSetRegion.mockReset();
   mocks.requireRole.mockResolvedValue(context);
 });
 
@@ -185,5 +195,69 @@ describe('/api/contacts/[id]/tags — sale tags (migration 045)', () => {
 
     expect(response.status).toBe(200);
     expect(mocks.createSale).not.toHaveBeenCalled();
+  });
+
+  it('passes fecha through to createSale when the caller sent one', async () => {
+    const db = fakeDb({
+      tags: { name: 'Venta', is_sale_tag: true },
+      accounts: { default_currency: 'PEN' },
+    });
+    mocks.requireRole.mockResolvedValue({ ...context, supabase: db });
+    mocks.add.mockResolvedValue({ added: true, dispatched: true });
+    mocks.createSale.mockResolvedValue({ id: 'sale-1' });
+
+    await POST(
+      request('POST', { tag_id: 'tag-1', price: 147.9, fecha: '2026-09-15' }),
+      params,
+    );
+
+    expect(mocks.createSale).toHaveBeenCalledWith(db, {
+      accountId: 'account-1',
+      userId: 'user-1',
+      contactId: 'contact-1',
+      tagName: 'Venta',
+      price: 147.9,
+      currency: 'PEN',
+      fecha: '2026-09-15',
+    });
+  });
+});
+
+describe('/api/contacts/[id]/tags — region tags (migration 050)', () => {
+  it('pushes the contact\'s phone + region when a region tag is freshly added', async () => {
+    const db = fakeDb({
+      tags: { name: 'Lima', is_sale_tag: false, region_value: 'Lima' },
+      contacts: { phone: '51999999999' },
+    });
+    mocks.requireRole.mockResolvedValue({ ...context, supabase: db });
+    mocks.add.mockResolvedValue({ added: true, dispatched: true });
+
+    await POST(request('POST', { tag_id: 'tag-3' }), params);
+
+    expect(mocks.pushSetRegion).toHaveBeenCalledWith(db, 'account-1', {
+      telefono: '51999999999',
+      ciudad: 'Lima',
+    });
+    expect(mocks.createSale).not.toHaveBeenCalled();
+  });
+
+  it('does not push a region for a tag with no region_value', async () => {
+    const db = fakeDb({ tags: { name: 'Interesado', is_sale_tag: false } });
+    mocks.requireRole.mockResolvedValue({ ...context, supabase: db });
+    mocks.add.mockResolvedValue({ added: true, dispatched: true });
+
+    await POST(request('POST', { tag_id: 'tag-2' }), params);
+
+    expect(mocks.pushSetRegion).not.toHaveBeenCalled();
+  });
+
+  it('does not push a region on a duplicate re-tag', async () => {
+    const db = fakeDb({ tags: { name: 'Lima', is_sale_tag: false, region_value: 'Lima' } });
+    mocks.requireRole.mockResolvedValue({ ...context, supabase: db });
+    mocks.add.mockResolvedValue({ added: false, dispatched: false, reason: 'duplicate' });
+
+    await POST(request('POST', { tag_id: 'tag-3' }), params);
+
+    expect(mocks.pushSetRegion).not.toHaveBeenCalled();
   });
 });

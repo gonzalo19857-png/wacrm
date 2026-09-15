@@ -24,14 +24,23 @@ interface SalePriceDialogProps {
   currency: string;
   saving: boolean;
   /** Rejects to keep the dialog open (e.g. the API call failed). */
-  onConfirm: (price: number) => Promise<void>;
+  onConfirm: (price: number, fecha: string) => Promise<void>;
+}
+
+/** Local YYYY-MM-DD — the date input's native format, and what the
+ *  live-sheet integration (migration 050) expects for "Fecha". */
+function today(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 /**
- * Prompts for a sale price when a "sale tag" (migration 045, e.g.
- * "Venta") is added to a contact. Kept intentionally to one field —
+ * Prompts for a sale price (and date) when a "sale tag" (migration
+ * 045, e.g. "Venta") is added to a contact. Kept intentionally quick —
  * this is meant to be a 5-second capture at the moment the agent tags
- * the chat, not a full deal form. Shared by contact-sidebar.tsx (inbox)
+ * the chat, not a full deal form; the date defaults to today so most
+ * agents never have to touch it. Shared by contact-sidebar.tsx (inbox)
  * and contact-detail-view.tsx (Contacts page) so both tagging entry
  * points behave identically.
  */
@@ -46,6 +55,7 @@ export function SalePriceDialog({
 }: SalePriceDialogProps) {
   const t = useTranslations("Contacts.saleTag");
   const [price, setPrice] = useState("");
+  const [fecha, setFecha] = useState(today());
   const [error, setError] = useState<string | null>(null);
 
   // Fresh field every time the dialog opens for a new tag/contact.
@@ -53,6 +63,7 @@ export function SalePriceDialog({
     if (open) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setPrice("");
+      setFecha(today());
       setError(null);
     }
   }, [open]);
@@ -65,8 +76,12 @@ export function SalePriceDialog({
       setError(t("errorInvalidPrice"));
       return;
     }
+    if (!fecha) {
+      setError(t("errorInvalidDate"));
+      return;
+    }
     setError(null);
-    await onConfirm(value);
+    await onConfirm(value, fecha);
   }
 
   return (
@@ -104,8 +119,20 @@ export function SalePriceDialog({
               className="pl-9"
             />
           </div>
-          {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="sale-date">{t("dateLabel")}</Label>
+          <Input
+            id="sale-date"
+            type="date"
+            value={fecha}
+            onChange={(e) => setFecha(e.target.value)}
+            disabled={saving}
+          />
+        </div>
+
+        {error && <p className="text-xs text-destructive">{error}</p>}
 
         <DialogFooter className="bg-popover border-border">
           <Button

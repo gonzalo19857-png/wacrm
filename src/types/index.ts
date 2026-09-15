@@ -122,8 +122,13 @@ export interface Tag {
   color: string;
   created_at: string;
   /** When true, adding this tag to a contact prompts for a sale price
-   *  and creates a pipeline deal for it (migration 045). */
+   *  and registers a sale for it (migration 045). */
   is_sale_tag?: boolean;
+  /** When set (e.g. "Lima", "Provincia"), adding this tag to a contact
+   *  pushes that value as the contact's region to the account's live
+   *  sheet webhook, if configured (migration 050). Null/absent means
+   *  this tag doesn't represent a region. */
+  region_value?: string | null;
 }
 
 export interface ContactTag {

@@ -60,7 +60,7 @@ export function ContactDetailView({
   const t = useTranslations('Contacts.detailView');
   const tSaleTag = useTranslations('Contacts.saleTag');
   const supabase = createClient();
-  const { accountId, defaultCurrency, canSendMessages, canEditSettings } = useAuth();
+  const { defaultCurrency, canSendMessages, canEditSettings } = useAuth();
 
   const [contact, setContact] = useState<Contact | null>(null);
   const [loading, setLoading] = useState(false);
@@ -267,11 +267,11 @@ export function ContactDetailView({
     setSavingTags(false);
   }
 
-  async function confirmSalePrice(price: number) {
+  async function confirmSalePrice(price: number, fecha: string) {
     if (!contactId || !salePrompt) return;
     setSavingSale(true);
     try {
-      const result = await addContactTag(contactId, salePrompt.id, price);
+      const result = await addContactTag(contactId, salePrompt.id, price, fecha);
       setContactTagIds((prev) => [...prev, salePrompt.id]);
       onUpdated();
       fetchSales();
@@ -334,31 +334,24 @@ export function ContactDetailView({
     if (!contactId || !newNote.trim()) return;
     setSavingNote(true);
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    const user = session?.user;
-    if (!user || !accountId) {
-      toast.error(t('toastNotAuthenticated'));
-      setSavingNote(false);
-      return;
-    }
-
-    const { error } = await supabase.from('contact_notes').insert({
-      contact_id: contactId,
-      account_id: accountId,
-      user_id: user.id,
-      note_text: newNote.trim(),
-    });
-
-    if (error) {
+    try {
+      const res = await fetch(`/api/contacts/${contactId}/notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note_text: newNote.trim() }),
+      });
+      if (!res.ok) {
+        toast.error(t('toastNoteAddFailed'));
+      } else {
+        setNewNote('');
+        fetchNotes();
+        toast.success(t('toastNoteAdded'));
+      }
+    } catch {
       toast.error(t('toastNoteAddFailed'));
-    } else {
-      setNewNote('');
-      fetchNotes();
-      toast.success(t('toastNoteAdded'));
+    } finally {
+      setSavingNote(false);
     }
-    setSavingNote(false);
   }
 
   async function deleteNote(noteId: string) {

@@ -10,31 +10,40 @@ async function mutateContactTag(
   contactId: string,
   tagId: string,
   method: 'POST' | 'DELETE',
-  price?: number
+  price?: number,
+  fecha?: string
 ): Promise<ContactTagMutationResult> {
+  const body: Record<string, unknown> = { tag_id: tagId };
+  if (price !== undefined) body.price = price;
+  if (fecha !== undefined) body.fecha = fecha;
+
   const response = await fetch(`/api/contacts/${contactId}/tags`, {
     method,
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(
-      price === undefined ? { tag_id: tagId } : { tag_id: tagId, price }
-    ),
+    body: JSON.stringify(body),
   });
-  const body = (await response.json().catch(() => ({}))) as {
+  const responseBody = (await response.json().catch(() => ({}))) as {
     error?: string;
   } & ContactTagMutationResult;
   if (!response.ok) {
-    throw new Error(body.error ?? 'Failed to update contact tag');
+    throw new Error(responseBody.error ?? 'Failed to update contact tag');
   }
-  return body;
+  return responseBody;
 }
 
 /**
- * `price` is only meaningful for a "sale tag" — pass it when the caller
- * already prompted for a price (see src/lib/contacts/sale-tag.ts for
- * what the server does with it). Omit it for a normal tag toggle.
+ * `price`/`fecha` are only meaningful for a "sale tag" — pass them
+ * when the caller already prompted for them (see
+ * src/lib/contacts/sale-tag.ts for what the server does with them).
+ * Omit both for a normal tag toggle.
  */
-export function addContactTag(contactId: string, tagId: string, price?: number) {
-  return mutateContactTag(contactId, tagId, 'POST', price);
+export function addContactTag(
+  contactId: string,
+  tagId: string,
+  price?: number,
+  fecha?: string
+) {
+  return mutateContactTag(contactId, tagId, 'POST', price, fecha);
 }
 
 export function deleteContactTag(contactId: string, tagId: string) {

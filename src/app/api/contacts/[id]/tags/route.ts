@@ -4,6 +4,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account';
 import { addContactTagAndDispatch } from '@/lib/contacts/tag-events';
 import { createSale } from '@/lib/contacts/sale-tag';
 import { pushSaleToGoogleForm } from '@/lib/contacts/sale-form';
+import { pushSetRegion } from '@/lib/contacts/sale-sheet';
 import { sendNewSaleTelegramAlert } from '@/lib/ai/handoff';
 import {
   ContactTagWriteError,
@@ -16,10 +17,11 @@ function tagWriteErrorResponse(error: ContactTagWriteError): NextResponse {
 
 async function readTagRequest(
   request: Request
-): Promise<{ tagId: string | null; price: number | null }> {
+): Promise<{ tagId: string | null; price: number | null; fecha: string | null }> {
   const body = (await request.json().catch(() => null)) as {
     tag_id?: unknown;
     price?: unknown;
+    fecha?: unknown;
   } | null;
   const tagId =
     typeof body?.tag_id === 'string' && body.tag_id.trim()
@@ -29,7 +31,9 @@ async function readTagRequest(
     typeof body?.price === 'number' && Number.isFinite(body.price) && body.price >= 0
       ? body.price
       : null;
-  return { tagId, price };
+  const fecha =
+    typeof body?.fecha === 'string' && body.fecha.trim() ? body.fecha.trim() : null;
+  return { tagId, price, fecha };
 }
 
 export async function POST(
@@ -39,7 +43,7 @@ export async function POST(
   try {
     const ctx = await requireRole('agent');
     const { id: contactId } = await params;
-    const { tagId, price } = await readTagRequest(request);
+    const { tagId, price, fecha } = await readTagRequest(request);
     if (!tagId) {
       return NextResponse.json({ error: 'tag_id required' }, { status: 400 });
     }
@@ -51,18 +55,37 @@ export async function POST(
       tagId,
     });
 
-    // A "sale tag" (migration 045) registers a sale: fire only on a
-    // genuine new add (never on a duplicate re-tag) and only when the
-    // caller sent a price — the client is expected to have prompted
-    // for it before calling this endpoint for a sale tag.
+    // A "sale tag" (migration 045) registers a sale, and a "region
+    // tag" (migration 050, e.g. "Lima" / "Provincia") pushes the
+    // contact's region to the live sheet — both only on a genuine new
+    // add (never on a duplicate re-tag).
     let saleId: string | null = null;
-    if (result.added && price !== null) {
+    if (result.added) {
       const { data: tag } = await ctx.supabase
         .from('tags')
-        .select('name, is_sale_tag')
+        .select('name, is_sale_tag, region_value')
         .eq('id', tagId)
         .maybeSingle();
-      if (tag?.is_sale_tag) {
+
+      if (tag?.region_value) {
+        try {
+          const { data: regionContact } = await ctx.supabase
+            .from('contacts')
+            .select('phone')
+            .eq('id', contactId)
+            .maybeSingle();
+          if (regionContact?.phone) {
+            await pushSetRegion(ctx.supabase, ctx.accountId, {
+              telefono: regionContact.phone,
+              ciudad: tag.region_value,
+            });
+          }
+        } catch (err) {
+          console.error('[contacts/tags] region sheet push failed:', err);
+        }
+      }
+
+      if (tag?.is_sale_tag && price !== null) {
         const { data: account } = await ctx.supabase
           .from('accounts')
           .select('default_currency')
@@ -76,6 +99,7 @@ export async function POST(
           tagName: tag.name,
           price,
           currency,
+          fecha: fecha ?? undefined,
         });
         saleId = sale?.id ?? null;
 

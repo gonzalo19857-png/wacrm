@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type CSSProperties } from 'react';
 import { toast } from 'sonner';
-import { CircleDollarSign, Loader2, Plus, Tag as TagIcon, X } from 'lucide-react';
+import { CircleDollarSign, Loader2, MapPin, Plus, Tag as TagIcon, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
@@ -139,6 +139,30 @@ export function TagManager() {
     }
   }
 
+  // Cycles a tag's region through none -> Lima -> Provincia -> none.
+  // Kept as a fixed 2-value cycle (rather than a free-text field) so
+  // the values always match exactly what the live sheet's `set_region`
+  // handler and the account's own AI prompt (migration 049's
+  // [[HANDOFF:lima]] / [[HANDOFF:provincia]]) expect.
+  const REGION_CYCLE = [null, 'Lima', 'Provincia'] as const;
+
+  async function toggleRegion(tag: Tag) {
+    const currentIndex = REGION_CYCLE.indexOf(
+      (tag.region_value as (typeof REGION_CYCLE)[number]) ?? null,
+    );
+    const next = REGION_CYCLE[(currentIndex + 1) % REGION_CYCLE.length];
+    const prev = tag.region_value ?? null;
+    setTags((ts) => ts.map((t) => (t.id === tag.id ? { ...t, region_value: next } : t)));
+    const { error } = await supabase
+      .from('tags')
+      .update({ region_value: next })
+      .eq('id', tag.id);
+    if (error) {
+      setTags((ts) => ts.map((t) => (t.id === tag.id ? { ...t, region_value: prev } : t)));
+      toast.error(t('failedToUpdateTag'));
+    }
+  }
+
   function confirmDelete(tag: Tag) {
     setTagToDelete(tag);
     setDeleteDialogOpen(true);
@@ -227,6 +251,25 @@ export function TagManager() {
                       )}
                     >
                       <CircleDollarSign className="size-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleRegion(tag)}
+                      aria-label={t('cycleRegionAria', {
+                        name: tag.name,
+                        region: tag.region_value || t('regionNone'),
+                      })}
+                      title={
+                        tag.region_value
+                          ? t('regionCurrent', { region: tag.region_value })
+                          : t('regionNone')
+                      }
+                      className={cn(
+                        'ml-0.5 rounded-full p-0.5 transition-opacity hover:bg-black/10 dark:hover:bg-white/10',
+                        tag.region_value ? 'opacity-100' : 'opacity-40 hover:opacity-80',
+                      )}
+                    >
+                      <MapPin className="size-3" />
                     </button>
                     <button
                       type="button"
