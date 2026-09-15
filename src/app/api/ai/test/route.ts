@@ -76,6 +76,7 @@ export async function POST(request: Request) {
         telegramBotToken: null,
         telegramChatId: null,
         telegramNotifyOnHandoff: false,
+        telegramNotifyOnSale: false,
       })
     } catch (err) {
       if (err instanceof AiError) {

@@ -96,6 +96,7 @@ function aiConfig(overrides: Partial<AiConfig> = {}): AiConfig {
     telegramBotToken: null,
     telegramChatId: null,
     telegramNotifyOnHandoff: false,
+    telegramNotifyOnSale: false,
     ...overrides,
   }
 }

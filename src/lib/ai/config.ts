@@ -15,10 +15,11 @@ interface AiConfigRow {
   telegram_bot_token: string | null
   telegram_chat_id: string | null
   telegram_notify_on_handoff: boolean
+  telegram_notify_on_sale: boolean
 }
 
 const CONFIG_COLUMNS =
-  'provider, model, api_key, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, embeddings_api_key, telegram_bot_token, telegram_chat_id, telegram_notify_on_handoff'
+  'provider, model, api_key, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, embeddings_api_key, telegram_bot_token, telegram_chat_id, telegram_notify_on_handoff, telegram_notify_on_sale'
 
 /**
  * Load and decrypt the account's AI config for *use* (draft or
@@ -101,6 +102,7 @@ export async function loadAiConfig(
     telegramBotToken,
     telegramChatId: row.telegram_chat_id,
     telegramNotifyOnHandoff: row.telegram_notify_on_handoff,
+    telegramNotifyOnSale: row.telegram_notify_on_sale,
   }
 }
 

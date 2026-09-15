@@ -39,6 +39,9 @@ export interface AiConfig {
   /** Master switch for the handoff alert, independent of whether the
    *  bot token/chat id are actually set (both are still required). */
   telegramNotifyOnHandoff: boolean
+  /** Master switch for the "new sale registered" alert (migration 047)
+   *  — same bot token/chat id as the handoff alert, toggled separately. */
+  telegramNotifyOnSale: boolean
 }
 
 /** A single conversation turn in the shape both providers accept. */

@@ -1653,6 +1653,8 @@
       "telegramChatIdHint": "Message your bot once, then visit api.telegram.org/bot<token>/getUpdates to find your chat id.",
       "telegramNotify": "Notify when a human is needed",
       "telegramNotifyDesc": "Send a Telegram message whenever a customer message won't get an automatic reply — including repeat messages while it's waiting on an agent.",
+      "telegramNotifySale": "Notify on a new sale",
+      "telegramNotifySaleDesc": "Send a Telegram message every time a sale is registered (the sale-tag price prompt).",
       "telegramTest": "Send test",
       "telegramTestSuccess": "Test message sent — check Telegram.",
       "telegramTestFailed": "Couldn't send the test message.",

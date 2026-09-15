@@ -31,7 +31,7 @@ export async function GET() {
       // `api_key` is selected only to derive `has_key` — it is stripped
       // out below and never returned to the client.
       .select(
-        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, api_key, embeddings_api_key, telegram_bot_token, telegram_chat_id, telegram_notify_on_handoff',
+        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, api_key, embeddings_api_key, telegram_bot_token, telegram_chat_id, telegram_notify_on_handoff, telegram_notify_on_sale',
       )
       .eq('account_id', accountId)
       .maybeSingle()
@@ -137,6 +137,7 @@ export async function POST(request: Request) {
     const rawTelegramChatId =
       typeof body.telegram_chat_id === 'string' ? body.telegram_chat_id.trim() : ''
     const telegramNotifyOnHandoff = body.telegram_notify_on_handoff === true
+    const telegramNotifyOnSale = body.telegram_notify_on_sale === true
 
     // Reuse the stored key when the form didn't send a fresh one.
     const { data: existing } = await supabase
@@ -183,6 +184,7 @@ export async function POST(request: Request) {
           telegramBotToken: null,
           telegramChatId: null,
           telegramNotifyOnHandoff: false,
+          telegramNotifyOnSale: false,
         })
       } catch (err) {
         if (err instanceof AiError) {
@@ -226,14 +228,14 @@ export async function POST(request: Request) {
     // The alert can't fire without both a token (fresh or stored) and a
     // chat id (fresh or stored) — catch that combination at save time
     // rather than silently no-op-ing on every handoff.
-    if (telegramNotifyOnHandoff) {
+    if (telegramNotifyOnHandoff || telegramNotifyOnSale) {
       const hasToken = !!(rawTelegramToken || existing?.telegram_bot_token)
       const resolvedChatId = telegramChatIdProvided
         ? rawTelegramChatId
         : existing?.telegram_chat_id
       if (!hasToken || !resolvedChatId) {
         return bad(
-          'Set a Telegram bot token and chat id before enabling handoff notifications.',
+          'Set a Telegram bot token and chat id before enabling notifications.',
         )
       }
     }
@@ -247,6 +249,7 @@ export async function POST(request: Request) {
       auto_reply_enabled: autoReplyEnabled,
       auto_reply_max_per_conversation: maxPer,
       telegram_notify_on_handoff: telegramNotifyOnHandoff,
+      telegram_notify_on_sale: telegramNotifyOnSale,
     }
     // Only touch the handoff target when the form actually sent the field,
     // so a partial save (e.g. flipping a toggle) doesn't wipe it.

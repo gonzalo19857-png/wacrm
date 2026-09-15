@@ -1653,6 +1653,8 @@
       "telegramChatIdHint": "봇에게 메시지를 한 번 보낸 뒤 api.telegram.org/bot<token>/getUpdates에서 채팅 ID를 확인하세요.",
       "telegramNotify": "사람이 필요할 때 알림",
       "telegramNotifyDesc": "고객 메시지가 자동으로 응답되지 않을 때마다 텔레그램 메시지를 보냅니다 — 상담원을 기다리는 동안 반복되는 메시지도 포함됩니다.",
+      "telegramNotifySale": "새 판매 알림",
+      "telegramNotifySaleDesc": "판매가 등록될 때마다(판매 태그 가격 입력) 텔레그램 메시지를 보냅니다.",
       "telegramTest": "테스트 전송",
       "telegramTestSuccess": "테스트 메시지를 보냈습니다 — 텔레그램을 확인하세요.",
       "telegramTestFailed": "테스트 메시지를 보내지 못했습니다.",

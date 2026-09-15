@@ -108,6 +108,48 @@ export async function sendNeedsReplyTelegramAlert(
 }
 
 /**
+ * Best-effort Telegram DM the moment a sale is registered (migration
+ * 045's sale-tag price prompt). Independent of the "needs a human"
+ * alert above — same bot token/chat id, own toggle (migration 047,
+ * `telegram_notify_on_sale`) — so an account can run one without the
+ * other. Swallows all errors: a Telegram outage must never fail the
+ * tag-add request that just registered the sale.
+ */
+export async function sendNewSaleTelegramAlert(
+  db: SupabaseClient,
+  args: {
+    telegramBotToken: string
+    telegramChatId: string
+    contactId: string
+    title: string
+    value: number
+    currency: string
+  },
+): Promise<void> {
+  const { telegramBotToken, telegramChatId, contactId, title, value, currency } = args
+  try {
+    const { data: contact } = await db
+      .from('contacts')
+      .select('name, phone')
+      .eq('id', contactId)
+      .maybeSingle()
+    const who = contact?.name?.trim() || contact?.phone || 'un contacto'
+
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/+$/, '')
+    const link = siteUrl ? `\n\nAbrir: ${siteUrl}/contacts` : ''
+
+    const text = `💰 Nueva venta registrada\n\nContacto: ${who}\n${title} — ${currency} ${value.toLocaleString()}${link}`
+
+    const result = await sendTelegramMessage(telegramBotToken, telegramChatId, text)
+    if (!result.ok) {
+      console.error(`[sale] Telegram alert failed for contact ${contactId}: ${result.error}`)
+    }
+  } catch (err) {
+    console.error(`[sale] Telegram alert threw for contact ${contactId}:`, err)
+  }
+}
+
+/**
  * Quote the customer's most recent message for a "needs a human"
  * alert that has no AI-generated handoff summary to lean on (the
  * assigned/already-handed-off/reply-cap gates in auto-reply.ts fire

@@ -85,6 +85,7 @@ export function AiConfig() {
   const [hasStoredTelegramToken, setHasStoredTelegramToken] = useState(false);
   const [telegramChatId, setTelegramChatId] = useState('');
   const [telegramNotifyOnHandoff, setTelegramNotifyOnHandoff] = useState(false);
+  const [telegramNotifyOnSale, setTelegramNotifyOnSale] = useState(false);
   const [testingTelegram, setTestingTelegram] = useState(false);
 
   // Guard keyed on the account (not a bare boolean) so an in-place
@@ -122,6 +123,7 @@ export function AiConfig() {
         setTelegramBotTokenEdited(false);
         setTelegramChatId(data.telegram_chat_id ?? '');
         setTelegramNotifyOnHandoff(Boolean(data.telegram_notify_on_handoff));
+        setTelegramNotifyOnSale(Boolean(data.telegram_notify_on_sale));
       }
     } catch {
       toast.error(t('loadFailed'));
@@ -174,6 +176,7 @@ export function AiConfig() {
     telegram_bot_token: telegramTokenPayload(),
     telegram_chat_id: telegramChatId.trim(),
     telegram_notify_on_handoff: telegramNotifyOnHandoff,
+    telegram_notify_on_sale: telegramNotifyOnSale,
   });
 
   const handleTest = async () => {
@@ -610,6 +613,18 @@ export function AiConfig() {
               <Switch
                 checked={telegramNotifyOnHandoff}
                 onCheckedChange={setTelegramNotifyOnHandoff}
+                disabled={disabled}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">{t('telegramNotifySale')}</p>
+                <p className="text-xs text-muted-foreground">{t('telegramNotifySaleDesc')}</p>
+              </div>
+              <Switch
+                checked={telegramNotifyOnSale}
+                onCheckedChange={setTelegramNotifyOnSale}
                 disabled={disabled}
               />
             </div>

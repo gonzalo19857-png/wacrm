@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server';
 import { requireRole, toErrorResponse } from '@/lib/auth/account';
 import { addContactTagAndDispatch } from '@/lib/contacts/tag-events';
 import { createSale } from '@/lib/contacts/sale-tag';
+import { loadAiConfig } from '@/lib/ai/config';
+import { sendNewSaleTelegramAlert } from '@/lib/ai/handoff';
 import {
   ContactTagWriteError,
   removeContactTag,
@@ -66,15 +68,38 @@ export async function POST(
           .select('default_currency')
           .eq('id', ctx.accountId)
           .maybeSingle();
+        const currency = account?.default_currency ?? 'USD';
         const sale = await createSale(ctx.supabase, {
           accountId: ctx.accountId,
           userId: ctx.userId,
           contactId,
           tagName: tag.name,
           price,
-          currency: account?.default_currency ?? 'USD',
+          currency,
         });
         saleId = sale?.id ?? null;
+
+        // Best-effort Telegram DM — never let a notification failure
+        // affect the response for a sale that already saved.
+        if (saleId) {
+          try {
+            const aiConfig = await loadAiConfig(ctx.supabase, ctx.accountId, {
+              requireActive: false,
+            });
+            if (aiConfig?.telegramNotifyOnSale && aiConfig.telegramBotToken && aiConfig.telegramChatId) {
+              await sendNewSaleTelegramAlert(ctx.supabase, {
+                telegramBotToken: aiConfig.telegramBotToken,
+                telegramChatId: aiConfig.telegramChatId,
+                contactId,
+                title: `${tag.name}`,
+                value: price,
+                currency,
+              });
+            }
+          } catch (err) {
+            console.error('[contacts/tags] sale Telegram alert failed:', err);
+          }
+        }
       }
     }
 
