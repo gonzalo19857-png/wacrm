@@ -282,6 +282,7 @@
       "sales": "Sales",
       "noTags": "No tags",
       "noSales": "No sales",
+      "tagUpdateFailed": "Couldn't update the tag",
       "addNotePlaceholder": "Add a note...",
       "save": "Save",
       "cancel": "Cancel",

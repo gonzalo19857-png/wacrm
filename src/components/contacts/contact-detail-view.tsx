@@ -251,17 +251,26 @@ export function ContactDetailView({
       }
     }
 
+    // Optimistic toggle — flip local state immediately instead of
+    // waiting on the request, which is what made this feel laggy.
+    // Roll back to the previous list if the request fails.
+    const previousTagIds = contactTagIds;
+    if (isSelected) {
+      setContactTagIds((prev) => prev.filter((id) => id !== tagId));
+    } else {
+      setContactTagIds((prev) => [...prev, tagId]);
+    }
+
     setSavingTags(true);
     try {
       if (isSelected) {
         await deleteContactTag(contactId, tagId);
-        setContactTagIds((prev) => prev.filter((id) => id !== tagId));
       } else {
         await addContactTag(contactId, tagId);
-        setContactTagIds((prev) => [...prev, tagId]);
       }
       onUpdated();
     } catch (error) {
+      setContactTagIds(previousTagIds);
       toast.error(error instanceof Error ? error.message : t('toastUpdateFailed'));
     }
     setSavingTags(false);

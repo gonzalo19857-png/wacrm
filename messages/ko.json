@@ -282,6 +282,7 @@
       "sales": "판매",
       "noTags": "태그 없음",
       "noSales": "판매 없음",
+      "tagUpdateFailed": "태그를 업데이트하지 못했습니다",
       "addNotePlaceholder": "메모 추가...",
       "save": "저장",
       "cancel": "취소",

@@ -148,6 +148,22 @@ export function ContactSidebar({ contact, onContactUpdated }: ContactSidebarProp
           return;
         }
       }
+
+      // Optimistic toggle — flip local state immediately instead of
+      // waiting on the request (and then a full fetchContactData
+      // re-fetch on top of it, which is what made this feel laggy:
+      // two sequential round trips before the chip visibly changed).
+      // Roll back to the previous list if the request fails.
+      const previousTags = tags;
+      if (isSelected) {
+        setTags((prev) => prev.filter((tag) => tag.id !== tagId));
+      } else {
+        const tag = allTags.find((t) => t.id === tagId);
+        if (tag) {
+          setTags((prev) => [...prev, { ...tag, contact_tag_id: `optimistic-${tagId}` }]);
+        }
+      }
+
       setSavingTagId(tagId);
       try {
         if (isSelected) {
@@ -155,12 +171,14 @@ export function ContactSidebar({ contact, onContactUpdated }: ContactSidebarProp
         } else {
           await addContactTag(contact.id, tagId);
         }
-        await fetchContactData();
+      } catch {
+        setTags(previousTags);
+        toast.error(tSidebar("tagUpdateFailed"));
       } finally {
         setSavingTagId(null);
       }
     },
-    [contact, tags, allTags, fetchContactData]
+    [contact, tags, allTags, tSidebar]
   );
 
   const handleConfirmSalePrice = useCallback(
