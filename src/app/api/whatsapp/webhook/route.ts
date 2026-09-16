@@ -386,10 +386,14 @@ async function handleStatusUpdate(status: {
     error_data?: { details?: string }
   }>
 }) {
+  // Meta's own reason the send didn't go through (migration 051). Kept
+  // alongside the console.error below — the column means it's visible
+  // via a normal query instead of only to whoever can reach server logs.
+  let errorDetail: string | null = null
   if (status.status === 'failed' && status.errors?.length) {
-    // Meta's own reason the send didn't go through. Nothing downstream
-    // persists this today (messages.status only stores the ladder
-    // state) — logging it is the only way to see it after the fact.
+    errorDetail = status.errors
+      .map((e) => `[${e.code}] ${e.title}${e.message ? `: ${e.message}` : ''}`)
+      .join('; ')
     console.error(
       `[webhook] send failed for wamid ${status.id} (recipient ${status.recipient_id}):`,
       JSON.stringify(status.errors),
@@ -403,7 +407,10 @@ async function handleStatusUpdate(status: {
   //    assume a single row.
   const { error: msgErr } = await supabaseAdmin()
     .from('messages')
-    .update({ status: status.status })
+    .update({
+      status: status.status,
+      ...(errorDetail ? { error_detail: errorDetail } : {}),
+    })
     .eq('message_id', status.id)
 
   if (msgErr) {
