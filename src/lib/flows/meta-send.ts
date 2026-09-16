@@ -12,20 +12,21 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 import {
   sanitizePhoneForMeta,
   isValidE164,
+  isBsuid,
   phoneVariants,
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils'
 import { supabaseAdmin } from './admin-client'
 
 // A contact whose number came from the webhook's wamid fallback (see
-// extractIdentityFromMessageId in the webhook route) is a 15-16 digit
-// WhatsApp LID, not a phone number — it fails isValidE164's 7-15-digit
-// E.164 shape by design. Meta's send API accepts a LID unchanged in `to`,
-// same as a phone number, so every send helper below lets it through
-// rather than blocking every send to these contacts (including the AI
-// auto-reply bot) on a check that assumes MSISDN shape.
-function isPlausibleLid(sanitized: string): boolean {
-  return /^\d{10,20}$/.test(sanitized)
+// extractIdentityFromMessageId in the webhook route) is a WhatsApp
+// Business-Scoped User ID (BSUID), not a phone number. Every send helper
+// below has to: check BEFORE sanitizing (sanitizePhoneForMeta's
+// digit-stripping would destroy the required country-code prefix), and
+// skip phoneVariants (which assumes a digits-only MSISDN) since a BSUID
+// has exactly one valid value.
+function resolveSendablePhone(rawPhone: string): string {
+  return isBsuid(rawPhone) ? rawPhone : sanitizePhoneForMeta(rawPhone)
 }
 
 // ------------------------------------------------------------
@@ -88,8 +89,8 @@ export async function engineSendText(
     throw new Error('contact not found for this account')
   }
 
-  const sanitized = sanitizePhoneForMeta(contact.phone)
-  if (!isValidE164(sanitized) && !isPlausibleLid(sanitized)) {
+  const sanitized = resolveSendablePhone(contact.phone)
+  if (!isValidE164(sanitized) && !isBsuid(sanitized)) {
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
 
@@ -114,7 +115,7 @@ export async function engineSendText(
     return r.messageId
   }
 
-  const variants = phoneVariants(sanitized)
+  const variants = isBsuid(sanitized) ? [sanitized] : phoneVariants(sanitized)
   let workingPhone = sanitized
   let waMessageId = ''
   let lastError: unknown = null
@@ -202,8 +203,8 @@ export async function engineSendMedia(
     throw new Error('contact not found for this account')
   }
 
-  const sanitized = sanitizePhoneForMeta(contact.phone)
-  if (!isValidE164(sanitized) && !isPlausibleLid(sanitized)) {
+  const sanitized = resolveSendablePhone(contact.phone)
+  if (!isValidE164(sanitized) && !isBsuid(sanitized)) {
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
 
@@ -231,7 +232,7 @@ export async function engineSendMedia(
     return r.messageId
   }
 
-  const variants = phoneVariants(sanitized)
+  const variants = isBsuid(sanitized) ? [sanitized] : phoneVariants(sanitized)
   let workingPhone = sanitized
   let waMessageId = ''
   let lastError: unknown = null
@@ -357,8 +358,8 @@ async function sendInteractiveViaMeta(
     throw new Error('contact not found for this account')
   }
 
-  const sanitized = sanitizePhoneForMeta(contact.phone)
-  if (!isValidE164(sanitized) && !isPlausibleLid(sanitized)) {
+  const sanitized = resolveSendablePhone(contact.phone)
+  if (!isValidE164(sanitized) && !isBsuid(sanitized)) {
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
 
@@ -402,7 +403,7 @@ async function sendInteractiveViaMeta(
   // Same phone-variant retry as automations/meta-send.ts. Numbers
   // registered with/without a trunk 0 + Meta's sandbox quirks all
   // need this to reliably land a message.
-  const variants = phoneVariants(sanitized)
+  const variants = isBsuid(sanitized) ? [sanitized] : phoneVariants(sanitized)
   let workingPhone = sanitized
   let waMessageId = ''
   let lastError: unknown = null

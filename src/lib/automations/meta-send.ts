@@ -8,6 +8,7 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 import {
   sanitizePhoneForMeta,
   isValidE164,
+  isBsuid,
   phoneVariants,
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils'
@@ -130,14 +131,15 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
     throw new Error('contact not found for this account')
   }
 
-  const sanitized = sanitizePhoneForMeta(contact.phone)
   // A contact whose number came from the webhook's wamid fallback (see
-  // extractIdentityFromMessageId in the webhook route) is a 15-16 digit
-  // WhatsApp LID, not a phone number — it fails isValidE164's 7-15-digit
-  // E.164 shape by design. Meta's send API accepts a LID unchanged in
-  // `to`, same as a phone number, so let it through here too.
-  const isPlausibleLid = /^\d{10,20}$/.test(sanitized)
-  if (!isValidE164(sanitized) && !isPlausibleLid) {
+  // extractIdentityFromMessageId in the webhook route) is a WhatsApp
+  // Business-Scoped User ID (BSUID), not a phone number — check BEFORE
+  // sanitizing, since sanitizePhoneForMeta's digit-stripping would
+  // destroy the required country-code prefix.
+  const sanitized = isBsuid(contact.phone)
+    ? contact.phone
+    : sanitizePhoneForMeta(contact.phone)
+  if (!isValidE164(sanitized) && !isBsuid(sanitized)) {
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
 
@@ -192,7 +194,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
   // Same phone-variant retry as /api/whatsapp/send — Meta sandbox and
   // numbers registered with/without a trunk 0 both require this to
   // reliably land a message.
-  const variants = phoneVariants(sanitized)
+  const variants = isBsuid(sanitized) ? [sanitized] : phoneVariants(sanitized)
   let workingPhone = sanitized
   let waMessageId = ''
   let lastError: unknown = null

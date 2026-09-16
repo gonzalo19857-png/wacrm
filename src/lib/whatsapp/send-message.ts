@@ -39,6 +39,7 @@ import { supabaseAdmin } from '@/lib/flows/admin-client';
 import {
   sanitizePhoneForMeta,
   isValidE164,
+  isBsuid,
   phoneVariants,
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils';
@@ -242,17 +243,15 @@ export async function sendMessageToConversation(
     );
   }
 
-  const sanitizedPhone = sanitizePhoneForMeta(contact.phone);
   // A contact whose number came from the webhook's wamid fallback (see
-  // extractIdentityFromMessageId in the webhook route) is a 15-16 digit
-  // WhatsApp LID, not a phone number — it fails isValidE164's 7-15-digit
-  // E.164 shape by design. Meta's send API accepts a LID unchanged in
-  // `to`, same as a phone number, so let it through here rather than
-  // block every send to these contacts on a check that assumes MSISDN
-  // shape. Genuinely malformed input still gets caught: either by Meta's
-  // API erroring on the send below, or it's simply not all-digits.
-  const isPlausibleLid = /^\d{10,20}$/.test(sanitizedPhone);
-  if (!isValidE164(sanitizedPhone) && !isPlausibleLid) {
+  // extractIdentityFromMessageId in the webhook route) is a WhatsApp
+  // Business-Scoped User ID (BSUID), not a phone number — check BEFORE
+  // sanitizing, since sanitizePhoneForMeta's digit-stripping would
+  // destroy the country-code prefix a BSUID must keep intact.
+  const sanitizedPhone = isBsuid(contact.phone)
+    ? contact.phone
+    : sanitizePhoneForMeta(contact.phone);
+  if (!isValidE164(sanitizedPhone) && !isBsuid(sanitizedPhone)) {
     throw new SendMessageError(
       'bad_request',
       'Invalid phone number format',
@@ -417,7 +416,11 @@ export async function sendMessageToConversation(
   let waMessageId = '';
   let workingPhone = sanitizedPhone;
   try {
-    const variants = phoneVariants(sanitizedPhone);
+    // phoneVariants assumes a digits-only MSISDN and inserts/removes a
+    // trunk-prefix "0" — running a BSUID through it would corrupt the
+    // country-code prefix. There's exactly one valid value for a BSUID,
+    // so skip the retry ladder entirely.
+    const variants = isBsuid(sanitizedPhone) ? [sanitizedPhone] : phoneVariants(sanitizedPhone);
     let lastError: unknown = null;
 
     for (const variant of variants) {

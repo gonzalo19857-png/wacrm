@@ -41,6 +41,25 @@ export function isValidE164(phone: string): boolean {
 }
 
 /**
+ * True for a WhatsApp Business-Scoped User ID (BSUID) — Meta's official
+ * stand-in for a phone number on a brand-new conversation from a customer
+ * who has enabled WhatsApp usernames (heavily correlated with Instagram-
+ * attributed Click-to-WhatsApp leads). Always "<2-letter ISO 3166 country
+ * code>.<up to 128 alphanumeric chars>" — a real phone number never
+ * contains a literal ".", so that's what distinguishes them.
+ * https://developers.facebook.com/documentation/business-messaging/whatsapp/business-scoped-user-ids/
+ *
+ * Unlike a phone number, a BSUID must travel through Meta's API *whole* —
+ * `sanitizePhoneForMeta`'s digit-stripping would destroy the country-code
+ * prefix, so callers must check this BEFORE sanitizing and skip
+ * sanitization (and the trunk-prefix `phoneVariants` retry, which assumes
+ * a digits-only phone) entirely when it's true.
+ */
+export function isBsuid(value: string): boolean {
+  return /^[A-Z]{2}\.[A-Za-z0-9]{6,128}$/.test(value)
+}
+
+/**
  * Generate plausible phone number variants for retry when Meta's
  * sandbox rejects a number with error #131030 ("not in allowed list").
  *

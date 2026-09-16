@@ -9,6 +9,8 @@
  * instead of a runtime rejection from Meta.
  */
 
+import { isBsuid } from './phone-utils'
+
 const META_API_VERSION = 'v21.0'
 const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`
 
@@ -215,6 +217,17 @@ export async function getSubscribedApps(
 // Sending
 // ============================================================
 
+// Meta addresses a real phone number via the `to` field, but a WhatsApp
+// Business-Scoped User ID (BSUID — see isBsuid) must go through the
+// separate `recipient` field instead. Sending a BSUID via `to` is
+// silently *accepted* by the API (Meta hands back a real message id) but
+// never delivered — it comes back as an async status webhook with error
+// 131026 "Message undeliverable" (confirmed against production traffic).
+// https://developers.facebook.com/documentation/business-messaging/whatsapp/business-scoped-user-ids/
+function recipientField(identifier: string): { to: string } | { recipient: string } {
+  return isBsuid(identifier) ? { recipient: identifier } : { to: identifier }
+}
+
 export interface SendTextMessageArgs {
   phoneNumberId: string
   accessToken: string
@@ -237,7 +250,7 @@ export async function sendTextMessage(
   const body: Record<string, unknown> = {
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
-    to,
+    ...recipientField(to),
     type: 'text',
     text: { body: text },
   }
@@ -304,7 +317,7 @@ export async function sendMediaMessage(
   const body: Record<string, unknown> = {
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
-    to,
+    ...recipientField(to),
     type: kind,
     [kind]: media,
   }
@@ -420,7 +433,7 @@ export async function sendTemplateMessage(
   const body: Record<string, unknown> = {
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
-    to,
+    ...recipientField(to),
     type: 'template',
     template: templatePayload,
   }
@@ -691,7 +704,7 @@ export async function sendReactionMessage(
     body: JSON.stringify({
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
-      to,
+      ...recipientField(to),
       type: 'reaction',
       reaction: { message_id: targetMessageId, emoji },
     }),
@@ -811,7 +824,7 @@ export async function sendInteractiveButtons(
   const body: Record<string, unknown> = {
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
-    to,
+    ...recipientField(to),
     type: 'interactive',
     interactive,
   }
@@ -943,7 +956,7 @@ export async function sendInteractiveList(
   const body: Record<string, unknown> = {
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
-    to,
+    ...recipientField(to),
     type: 'interactive',
     interactive,
   }

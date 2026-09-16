@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isBsuid,
   isRecipientNotAllowedError,
   isValidE164,
   normalizePhone,
@@ -89,6 +90,32 @@ describe("isValidE164", () => {
 
   it("rejects the empty string", () => {
     expect(isValidE164("")).toBe(false);
+  });
+});
+
+describe("isBsuid", () => {
+  it("accepts real production BSUID shapes", () => {
+    expect(isBsuid("PE.1616826183511522")).toBe(true);
+    expect(isBsuid("US.13491208655302741918")).toBe(true);
+  });
+
+  it("rejects real phone numbers", () => {
+    expect(isBsuid("37063949836")).toBe(false);
+    expect(isBsuid("+37063949836")).toBe(false);
+  });
+
+  it("rejects a bare country code or missing id", () => {
+    expect(isBsuid("PE.")).toBe(false);
+    expect(isBsuid("PE")).toBe(false);
+  });
+
+  it("rejects a lowercase or 3+ letter prefix", () => {
+    expect(isBsuid("pe.1616826183511522")).toBe(false);
+    expect(isBsuid("PER.1616826183511522")).toBe(false);
+  });
+
+  it("rejects the empty string", () => {
+    expect(isBsuid("")).toBe(false);
   });
 });
 

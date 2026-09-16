@@ -608,29 +608,40 @@ async function handleReaction(
 /**
  * Best-effort fallback identifier when Meta sends neither `contacts[].wa_id`
  * nor `messages[].from` on an inbound delivery (see the empty-phone guard
- * below). Confirmed against production data: decoding the `wamid.` message
- * id Meta hands back on THAT SAME message yields an ASCII run shaped like
- * "<2-letter country code>.<15-16 digit id>" embedded in otherwise-binary
- * bytes — e.g. "PE.1616826183511522" — and that id is stable across a
- * sender's repeat messages (three separate messages from the same lead all
- * decoded to the identical id, confirming it's per-sender, not per-message).
- * The digit count doesn't match a real phone number, which lines up with
- * this being WhatsApp's LID (privacy-preserving identifier) system rather
- * than a withheld MSISDN — Meta's Cloud API accepts a LID unchanged in a
- * send's `to` field, the same as a phone number.
+ * below). This is a WhatsApp Business-Scoped User ID (BSUID) — Meta's
+ * official replacement for a phone number on a brand-new conversation from
+ * a customer who has enabled WhatsApp usernames (privacy: hide my number).
+ * Heavily correlated with Instagram-attributed Click-to-WhatsApp leads.
+ * https://developers.facebook.com/documentation/business-messaging/whatsapp/business-scoped-user-ids/
  *
- * This is reverse-engineered, not documented — `wamid` is an officially
- * opaque token and Meta can change its internal shape without notice. Used
- * only as a last resort, and only for correlating a sender across messages
- * (dedup) and as a best-effort send target; never validated against
- * isValidE164, since it isn't phone-shaped.
+ * Per that doc, the *intended* transport for a BSUID is the webhook's
+ * `contacts[].user_id` / `messages[].from_user_id` fields — this codebase
+ * doesn't read those (yet), so when both land empty the id is instead
+ * recovered by decoding the `wamid.` message id Meta hands back on THAT
+ * SAME message: the raw bytes contain an ASCII run in exactly the
+ * documented BSUID shape "<2-letter ISO country code>.<alphanumeric id>"
+ * (e.g. "PE.1616826183511522"), and it's stable across a sender's repeat
+ * messages (three separate messages from the same lead all decoded to the
+ * identical id). `wamid` itself is an officially opaque token, so this
+ * extraction is reverse-engineered and could break silently on a future
+ * Meta change — reading the proper webhook fields is the sturdier fix if
+ * this keeps mattering.
+ *
+ * The full "CC.id" string must be kept intact — Meta's docs are explicit
+ * that a BSUID has to travel whole (country code + period + id) or the
+ * API request fails. Callers pass it straight through to `contact.phone`;
+ * downstream, `recipientField()` in meta-api.ts detects the BSUID shape
+ * and routes it through the `recipient` param instead of `to` (sending a
+ * BSUID via `to` is accepted by Meta but silently undeliverable — error
+ * 131026 — confirmed against production traffic before this fallback used
+ * `recipient`).
  */
 function extractIdentityFromMessageId(messageId: string): string | null {
   const b64 = messageId.replace(/^wamid\./, '')
   try {
     const decoded = Buffer.from(b64, 'base64').toString('latin1')
-    const match = decoded.match(/[A-Z]{2}\.(\d{10,20})/)
-    return match ? match[1] : null
+    const match = decoded.match(/[A-Z]{2}\.[A-Za-z0-9]{6,128}/)
+    return match ? match[0] : null
   } catch {
     return null
   }
