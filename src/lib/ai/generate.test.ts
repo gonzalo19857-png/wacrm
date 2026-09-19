@@ -46,6 +46,7 @@ describe('parseGeneration', () => {
       handoffReason: null,
       noReply: false,
       imageKey: null,
+      shipmentRaw: null,
       usage: null,
     })
   })
@@ -57,6 +58,7 @@ describe('parseGeneration', () => {
       handoffReason: null,
       noReply: false,
       imageKey: null,
+      shipmentRaw: null,
       usage: null,
     })
     expect(parseGeneration('Let me get a human [[HANDOFF]]')).toEqual({
@@ -65,6 +67,7 @@ describe('parseGeneration', () => {
       handoffReason: null,
       noReply: false,
       imageKey: null,
+      shipmentRaw: null,
       usage: null,
     })
   })
@@ -76,6 +79,7 @@ describe('parseGeneration', () => {
       handoffReason: 'lima',
       noReply: false,
       imageKey: null,
+      shipmentRaw: null,
       usage: null,
     })
     expect(parseGeneration('Perfecto [[HANDOFF:provincia]]')).toEqual({
@@ -84,6 +88,7 @@ describe('parseGeneration', () => {
       handoffReason: 'provincia',
       noReply: false,
       imageKey: null,
+      shipmentRaw: null,
       usage: null,
     })
     // Case-insensitive on the way in, normalized to lowercase on the way out.
@@ -97,6 +102,7 @@ describe('parseGeneration', () => {
       handoffReason: null,
       noReply: true,
       imageKey: null,
+      shipmentRaw: null,
       usage: null,
     })
   })
@@ -109,6 +115,7 @@ describe('parseGeneration', () => {
       handoffReason: null,
       noReply: false,
       imageKey: null,
+      shipmentRaw: null,
       usage,
     })
   })
@@ -120,6 +127,7 @@ describe('parseGeneration', () => {
       handoffReason: null,
       noReply: false,
       imageKey: 'sedan-l',
+      shipmentRaw: null,
       usage: null,
     })
   })
@@ -134,6 +142,30 @@ describe('parseGeneration', () => {
     )
     expect(result.text).toBe('Mototaxi: talla única\n\nSedán: talla M')
     expect(result.imageKey).toBe('mototaxi-torito')
+  })
+
+  it('detects + strips the shipment sentinel', () => {
+    expect(
+      parseGeneration(
+        'Perfecto, te anoto los datos [[SHIPMENT:region=provincia;city=Arequipa;agency=Shalom Mercaderes;name=Juan Perez]]',
+      ),
+    ).toEqual({
+      text: 'Perfecto, te anoto los datos',
+      handoff: false,
+      handoffReason: null,
+      noReply: false,
+      imageKey: null,
+      shipmentRaw: 'region=provincia;city=Arequipa;agency=Shalom Mercaderes;name=Juan Perez',
+      usage: null,
+    })
+  })
+
+  it('strips every shipment sentinel occurrence, not just the first', () => {
+    const result = parseGeneration(
+      'Anotado[[SHIPMENT:name=Juan]]\n\nY el DNI[[SHIPMENT:dni=12345678]]',
+    )
+    expect(result.text).toBe('Anotado\n\nY el DNI')
+    expect(result.shipmentRaw).toBe('name=Juan')
   })
 })
 
@@ -159,6 +191,7 @@ describe('generateReply — OpenAI', () => {
       handoffReason: null,
       noReply: false,
       imageKey: null,
+      shipmentRaw: null,
       usage: { promptTokens: 42, completionTokens: 8, totalTokens: 50 },
     })
     const [url, opts] = fetchMock.mock.calls[0]
@@ -221,6 +254,7 @@ describe('generateReply — Anthropic', () => {
       handoffReason: null,
       noReply: false,
       imageKey: null,
+      shipmentRaw: null,
       usage: { promptTokens: 30, completionTokens: 6, totalTokens: 36 },
     })
     const [url, opts] = fetchMock.mock.calls[0]
@@ -305,6 +339,7 @@ describe('generateReply — OpenRouter', () => {
       handoffReason: null,
       noReply: false,
       imageKey: null,
+      shipmentRaw: null,
       usage: { promptTokens: 42, completionTokens: 8, totalTokens: 50 },
     })
     const [url, opts] = fetchMock.mock.calls[0]

@@ -9,6 +9,7 @@ const EVENT_KEYS: TelegramEventKey[] = [
   'new_sale',
   'handoff_lima',
   'handoff_provincia',
+  'shipment_ready',
 ]
 
 function bad(message: string) {

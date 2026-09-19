@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
-import { SalePriceDialog } from '@/components/contacts/sale-price-dialog';
+import { SalePriceDialog, type SaleRegion } from '@/components/contacts/sale-price-dialog';
 import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency } from '@/lib/currency';
 import { toast } from 'sonner';
@@ -276,11 +276,11 @@ export function ContactDetailView({
     setSavingTags(false);
   }
 
-  async function confirmSalePrice(price: number, fecha: string) {
+  async function confirmSalePrice(price: number, fecha: string, region: SaleRegion) {
     if (!contactId || !salePrompt) return;
     setSavingSale(true);
     try {
-      const result = await addContactTag(contactId, salePrompt.id, price, fecha);
+      const result = await addContactTag(contactId, salePrompt.id, price, fecha, region);
       setContactTagIds((prev) => [...prev, salePrompt.id]);
       onUpdated();
       fetchSales();

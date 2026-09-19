@@ -16,6 +16,8 @@ import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { CURRENCIES } from "@/lib/currency";
 
+export type SaleRegion = "lima" | "provincia" | null;
+
 interface SalePriceDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -24,7 +26,7 @@ interface SalePriceDialogProps {
   currency: string;
   saving: boolean;
   /** Rejects to keep the dialog open (e.g. the API call failed). */
-  onConfirm: (price: number, fecha: string) => Promise<void>;
+  onConfirm: (price: number, fecha: string, region: SaleRegion) => Promise<void>;
 }
 
 /** Local YYYY-MM-DD — the date input's native format, and what the
@@ -56,6 +58,7 @@ export function SalePriceDialog({
   const t = useTranslations("Contacts.saleTag");
   const [price, setPrice] = useState("");
   const [fecha, setFecha] = useState(today());
+  const [region, setRegion] = useState<SaleRegion>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Fresh field every time the dialog opens for a new tag/contact.
@@ -64,6 +67,7 @@ export function SalePriceDialog({
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setPrice("");
       setFecha(today());
+      setRegion(null);
       setError(null);
     }
   }, [open]);
@@ -81,7 +85,7 @@ export function SalePriceDialog({
       return;
     }
     setError(null);
-    await onConfirm(value, fecha);
+    await onConfirm(value, fecha, region);
   }
 
   return (
@@ -130,6 +134,36 @@ export function SalePriceDialog({
             onChange={(e) => setFecha(e.target.value)}
             disabled={saving}
           />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>{t("regionLabel")}</Label>
+          <div className="flex gap-1.5">
+            {(
+              [
+                [null, t("regionNone")],
+                ["lima", t("regionLima")],
+                ["provincia", t("regionProvincia")],
+              ] as [SaleRegion, string][]
+            ).map(([value, label]) => (
+              <Button
+                key={label}
+                type="button"
+                variant={region === value ? "default" : "outline"}
+                size="sm"
+                disabled={saving}
+                onClick={() => setRegion(value)}
+                className={
+                  region === value
+                    ? undefined
+                    : "border-border text-muted-foreground hover:bg-muted"
+                }
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+          <p className="text-[11px] text-muted-foreground">{t("regionHint")}</p>
         </div>
 
         {error && <p className="text-xs text-destructive">{error}</p>}

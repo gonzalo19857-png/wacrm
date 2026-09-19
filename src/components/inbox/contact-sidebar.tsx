@@ -7,7 +7,8 @@ import { cn } from "@/lib/utils";
 import type { Contact, Sale, ContactNote, Tag } from "@/types";
 import { addContactTag, deleteContactTag } from "@/lib/contacts/tag-api";
 import { avatarColorFor } from "@/lib/avatar-color";
-import { SalePriceDialog } from "@/components/contacts/sale-price-dialog";
+import { SalePriceDialog, type SaleRegion } from "@/components/contacts/sale-price-dialog";
+import { ShipmentPanel } from "@/components/contacts/shipment-panel";
 import { toast } from "sonner";
 import {
   Phone,
@@ -18,6 +19,7 @@ import {
   Tag as TagIcon,
   DollarSign,
   StickyNote,
+  Truck,
   Plus,
   Pencil,
   Trash2,
@@ -182,11 +184,11 @@ export function ContactSidebar({ contact, onContactUpdated }: ContactSidebarProp
   );
 
   const handleConfirmSalePrice = useCallback(
-    async (price: number, fecha: string) => {
+    async (price: number, fecha: string, region: SaleRegion) => {
       if (!contact || !salePrompt) return;
       setSavingSale(true);
       try {
-        const result = await addContactTag(contact.id, salePrompt.id, price, fecha);
+        const result = await addContactTag(contact.id, salePrompt.id, price, fecha, region);
         await fetchContactData();
         setSalePrompt(null);
         if (result.saleId) {
@@ -568,6 +570,20 @@ export function ContactSidebar({ contact, onContactUpdated }: ContactSidebarProp
                   </div>
                 ))
               )}
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div className="my-4 border-t border-border" />
+
+          {/* Shipment */}
+          <div>
+            <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              <Truck className="h-3 w-3" />
+              {tSidebar("shipment")}
+            </div>
+            <div className="mt-2">
+              {contact && <ShipmentPanel contactId={contact.id} />}
             </div>
           </div>
 

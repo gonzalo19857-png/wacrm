@@ -280,6 +280,7 @@
       "tags": "태그",
       "notes": "메모",
       "sales": "판매",
+      "shipment": "배송",
       "noTags": "태그 없음",
       "noSales": "판매 없음",
       "tagUpdateFailed": "태그를 업데이트하지 못했습니다",
@@ -535,7 +536,53 @@
       "errorInvalidPrice": "올바른 가격을 입력하세요",
       "errorInvalidDate": "올바른 날짜를 입력하세요",
       "toastSuccess": "판매가 등록되었습니다",
-      "toastFailed": "판매를 등록하지 못했습니다 — 태그는 추가되었지만 판매가 기록되지 않았습니다."
+      "toastFailed": "판매를 등록하지 못했습니다 — 태그는 추가되었지만 판매가 기록되지 않았습니다.",
+      "regionLabel": "배송 지역",
+      "regionNone": "없음",
+      "regionLima": "리마",
+      "regionProvincia": "지방",
+      "regionHint": "배송 기록을 생성합니다 — 배송 상세 정보는 아래 배송 섹션에서 입력하세요."
+    },
+    "shipment": {
+      "loading": "배송 정보를 불러오는 중...",
+      "empty": "등록된 배송 정보가 없습니다 — 판매 태그에서 배송 지역을 선택하거나, 고객이 배송 정보를 알려주면 AI 봇이 자동으로 생성합니다.",
+      "region": {
+        "lima": "리마",
+        "provincia": "지방",
+        "unset": "지역 미설정"
+      },
+      "status": {
+        "collecting": "정보 수집 중",
+        "ready": "발송 준비 완료",
+        "shipped": "대리점으로 발송됨",
+        "at_agency": "대리점 도착",
+        "out_for_delivery": "배송 중",
+        "delivered": "배송 완료"
+      },
+      "advance": {
+        "shipped": "발송 완료로 표시",
+        "at_agency": "대리점 도착으로 표시",
+        "out_for_delivery": "배송 중으로 표시",
+        "delivered": "배송 완료로 표시"
+      },
+      "city": "도시",
+      "agencyName": "대리점",
+      "agencyAddress": "대리점 주소",
+      "deliveryAddress": "배송 주소",
+      "deliveryReference": "참고 사항",
+      "recipientName": "수령인",
+      "recipientDni": "신분증 번호",
+      "recipientPhone": "전화번호",
+      "save": "저장",
+      "saved": "배송 정보가 저장되었습니다",
+      "saveFailed": "배송 정보를 저장하지 못했습니다",
+      "statusUpdated": "상태가 업데이트되었습니다",
+      "statusUpdatedNotified": "상태가 업데이트되었습니다 — 고객에게 WhatsApp으로 알림을 보냈습니다",
+      "statusUpdateFailed": "상태를 업데이트하지 못했습니다",
+      "sendPhoto": "Shalom 영수증 보내기",
+      "photoTooLarge": "사진이 5MB를 초과합니다",
+      "photoSent": "영수증을 고객에게 보냈습니다",
+      "photoSendFailed": "영수증 사진을 보내지 못했습니다"
     }
   },
   "Reports": {
@@ -1750,7 +1797,8 @@
         "needs_human": "사람이 필요할 때",
         "new_sale": "새 판매 등록",
         "handoff_lima": "주문 — 리마",
-        "handoff_provincia": "주문 — 지방"
+        "handoff_provincia": "주문 — 지방",
+        "shipment_ready": "발송 준비 완료"
       },
       "addTitle": "수신처 추가",
       "label": "이름",
@@ -1773,6 +1821,29 @@
       "deleteFailed": "수신처를 삭제하지 못했습니다",
       "deleteSuccess": "수신처가 삭제되었습니다",
       "deleteAria": "수신처 삭제"
+    },
+    "shalomAgencies": {
+      "title": "샬롬 대리점",
+      "description": "도시별 실제 샬롬 픽업 장소를 한 번만 등록해두면, 직원이 매번 샬롬 위치 검색을 캡처해서 보내는 대신 AI 봇이 지방 고객에게 바로 안내할 수 있습니다.",
+      "empty": "등록된 대리점이 없습니다.",
+      "addTitle": "대리점 추가",
+      "city": "도시",
+      "cityPlaceholder": "예: 아레키파",
+      "name": "대리점 이름",
+      "namePlaceholder": "예: Shalom Mercaderes",
+      "address": "주소",
+      "addressPlaceholder": "전체 도로명 주소",
+      "reference": "참고 사항 (선택)",
+      "referencePlaceholder": "예: 중앙 시장 앞",
+      "add": "추가",
+      "createMissingFields": "도시, 이름, 주소는 필수입니다",
+      "createFailed": "대리점을 만들지 못했습니다",
+      "createSuccess": "대리점이 추가되었습니다",
+      "updateFailed": "대리점을 수정하지 못했습니다",
+      "deleteConfirm": "\"{name}\"을(를) 삭제하시겠습니까? 되돌릴 수 없습니다.",
+      "deleteFailed": "대리점을 삭제하지 못했습니다",
+      "deleteSuccess": "대리점이 삭제되었습니다",
+      "deleteAria": "대리점 삭제"
     }
   }
 }

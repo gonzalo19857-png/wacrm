@@ -8,12 +8,15 @@ import {
   buildHandoffSummary,
   quoteLastCustomerMessage,
   sendNeedsReplyTelegramAlert,
+  sendShipmentReadyTelegramAlert,
 } from './handoff'
 import {
   enforceWhatsAppEmphasis,
   stripRepeatedRecommendation,
 } from './format-whatsapp'
 import { getProductImage } from './product-images'
+import { findShalomAgenciesForMessages } from './shalom-agencies'
+import { getShipmentStatusContext, parseShipmentSentinel, upsertShipmentFromSentinel } from './shipment'
 import { logAiUsage } from './usage'
 import { engineSendText, engineSendMedia } from '@/lib/flows/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
@@ -155,6 +158,15 @@ export async function dispatchInboundToAiReply(
       messages,
     )
 
+    // Delivery-flow grounding (migration 052): real Shalom agencies for
+    // whatever Provincia city was just named, plus a summary of any
+    // shipment already on file — both best-effort, never block the
+    // reply if either lookup fails.
+    const [shalomAgencies, shipmentContext] = await Promise.all([
+      findShalomAgenciesForMessages(db, accountId, messages),
+      getShipmentStatusContext(db, accountId, contactId),
+    ])
+
     // Peru doesn't observe DST, so a fixed UTC-5 offset is always
     // correct — lets the model greet with the right "Buenos días /
     // buenas tardes / buenas noches" instead of guessing (it has no
@@ -175,9 +187,19 @@ export async function dispatchInboundToAiReply(
       userPrompt: userPromptWithTime,
       mode: 'auto_reply',
       knowledge,
+      shalomAgencies,
+      shipmentContext,
     })
 
-    const { text: rawText, handoff, handoffReason, noReply, imageKey, usage } = await generateReply({
+    const {
+      text: rawText,
+      handoff,
+      handoffReason,
+      noReply,
+      imageKey,
+      shipmentRaw,
+      usage,
+    } = await generateReply({
       config,
       systemPrompt,
       messages,
@@ -198,6 +220,35 @@ export async function dispatchInboundToAiReply(
     // alone gets it right only some of the time. No-op on text that
     // doesn't mention a talla or an S/ price.
     const text = enforceWhatsAppEmphasis(dedupedText)
+
+    // Persist any delivery data the model gathered this turn (migration
+    // 052) — independent of noReply/handoff below, since a Lima order
+    // typically hands off right after the sentinel that completes it.
+    // Best-effort: a persistence failure must never affect the send.
+    if (shipmentRaw) {
+      try {
+        const fields = parseShipmentSentinel(shipmentRaw)
+        const result = await upsertShipmentFromSentinel(db, { accountId, contactId, fields })
+        if (result?.becameReady) {
+          await sendShipmentReadyTelegramAlert(db, {
+            accountId,
+            contactId,
+            shipment: {
+              region: result.row.region,
+              city: result.row.city,
+              agencyName: result.row.agency_name,
+              deliveryAddress: result.row.delivery_address,
+              deliveryReference: result.row.delivery_reference,
+              recipientName: result.row.recipient_name,
+              recipientDni: result.row.recipient_dni,
+              recipientPhone: result.row.recipient_phone,
+            },
+          })
+        }
+      } catch (err) {
+        console.error('[ai auto-reply] shipment sentinel persist failed:', err)
+      }
+    }
 
     // Record token spend on the account's BYO key. Fire-and-forget so it
     // never adds latency to the customer-facing send: `logAiUsage`

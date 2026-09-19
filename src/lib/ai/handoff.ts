@@ -153,6 +153,64 @@ export async function sendNewSaleTelegramAlert(
 }
 
 /**
+ * Best-effort Telegram DM the moment a shipment (migration 052) has
+ * everything it needs to actually be handed to Shalom or a courier —
+ * fired exactly once, when `mergeShipmentFields` reports the record
+ * just turned `ready`, whether that merge came from the AI bot's
+ * `[[SHIPMENT:...]]` sentinel or an agent finishing the shipment panel
+ * by hand. Swallows all errors, same discipline as the other alerts
+ * here: the shipment data itself is already persisted by the time this
+ * runs.
+ */
+export async function sendShipmentReadyTelegramAlert(
+  db: SupabaseClient,
+  args: {
+    accountId: string
+    contactId: string
+    shipment: {
+      region: string | null
+      city: string | null
+      agencyName: string | null
+      deliveryAddress: string | null
+      deliveryReference: string | null
+      recipientName: string | null
+      recipientDni: string | null
+      recipientPhone: string | null
+    }
+  },
+): Promise<void> {
+  const { accountId, contactId, shipment } = args
+  try {
+    const { data: contact } = await db
+      .from('contacts')
+      .select('name, phone')
+      .eq('id', contactId)
+      .maybeSingle()
+    const who = contact?.name?.trim() || contact?.phone || 'un contacto'
+
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/+$/, '')
+    const link = siteUrl ? `\n\nAbrir: ${siteUrl}/contacts` : ''
+
+    const destinationLine =
+      shipment.region === 'provincia'
+        ? `Destino: ${shipment.city ?? '-'} — ${shipment.agencyName ?? '-'}`
+        : `Dirección: ${shipment.deliveryAddress ?? '-'}${
+            shipment.deliveryReference ? ` (${shipment.deliveryReference})` : ''
+          }`
+
+    const text =
+      `📦 Envío listo para despachar\n\n` +
+      `Contacto: ${who}\n${destinationLine}\n` +
+      `Destinatario: ${shipment.recipientName ?? '-'} — DNI ${shipment.recipientDni ?? '-'} — Tel ${shipment.recipientPhone ?? '-'}` +
+      link
+
+    await notifyTelegramDestinations(db, accountId, 'shipment_ready', text)
+  } catch (err) {
+    console.error(`[shipment] Telegram alert threw for contact ${contactId}:`, err)
+  }
+}
+
+/**
  * Quote the customer's most recent message for a "needs a human"
  * alert that has no AI-generated handoff summary to lean on (the
  * assigned/already-handed-off/reply-cap gates in auto-reply.ts fire

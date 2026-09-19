@@ -71,6 +71,10 @@ export interface GenerateResult {
   /** The key from a `[[IMAGE:<key>]]` sentinel, or null if the model
    *  didn't request a specific product image. */
   imageKey: string | null
+  /** Raw `key=value;...` payload from a `[[SHIPMENT:...]]` sentinel
+   *  (auto-reply mode), or null if the model didn't emit one this
+   *  turn. Parsed by `src/lib/ai/shipment.ts#parseShipmentSentinel`. */
+  shipmentRaw: string | null
   /** Provider token usage for this call, or null when unavailable. */
   usage: AiUsage | null
 }

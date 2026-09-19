@@ -6,6 +6,7 @@ import { createSale } from '@/lib/contacts/sale-tag';
 import { pushSaleToGoogleForm } from '@/lib/contacts/sale-form';
 import { pushSetRegion } from '@/lib/contacts/sale-sheet';
 import { sendNewSaleTelegramAlert } from '@/lib/ai/handoff';
+import { mergeShipmentFields } from '@/lib/shipments/store';
 import {
   ContactTagWriteError,
   removeContactTag,
@@ -17,11 +18,17 @@ function tagWriteErrorResponse(error: ContactTagWriteError): NextResponse {
 
 async function readTagRequest(
   request: Request
-): Promise<{ tagId: string | null; price: number | null; fecha: string | null }> {
+): Promise<{
+  tagId: string | null;
+  price: number | null;
+  fecha: string | null;
+  region: 'lima' | 'provincia' | null;
+}> {
   const body = (await request.json().catch(() => null)) as {
     tag_id?: unknown;
     price?: unknown;
     fecha?: unknown;
+    region?: unknown;
   } | null;
   const tagId =
     typeof body?.tag_id === 'string' && body.tag_id.trim()
@@ -33,7 +40,8 @@ async function readTagRequest(
       : null;
   const fecha =
     typeof body?.fecha === 'string' && body.fecha.trim() ? body.fecha.trim() : null;
-  return { tagId, price, fecha };
+  const region = body?.region === 'lima' || body?.region === 'provincia' ? body.region : null;
+  return { tagId, price, fecha, region };
 }
 
 export async function POST(
@@ -43,7 +51,7 @@ export async function POST(
   try {
     const ctx = await requireRole('agent');
     const { id: contactId } = await params;
-    const { tagId, price, fecha } = await readTagRequest(request);
+    const { tagId, price, fecha, region } = await readTagRequest(request);
     if (!tagId) {
       return NextResponse.json({ error: 'tag_id required' }, { status: 400 });
     }
@@ -102,6 +110,25 @@ export async function POST(
           fecha: fecha ?? undefined,
         });
         saleId = sale?.id ?? null;
+
+        // A region picked right in the sale dialog (migration 052) —
+        // just sets `region` on the contact's open shipment (creating
+        // one if there isn't one yet) and links it to this sale. Never
+        // overwrites a region the bot or a prior edit already set.
+        // Best-effort: this is a convenience, not the sale itself.
+        if (saleId && region) {
+          try {
+            await mergeShipmentFields(ctx.supabase, {
+              accountId: ctx.accountId,
+              contactId,
+              saleId,
+              createdBy: ctx.userId,
+              patch: { region },
+            });
+          } catch (err) {
+            console.error('[contacts/tags] shipment region link failed:', err);
+          }
+        }
 
         // Fan out to whatever's configured — best-effort, never let a
         // notification/integration failure affect the response for a

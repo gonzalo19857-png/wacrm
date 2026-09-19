@@ -280,6 +280,7 @@
       "tags": "Tags",
       "notes": "Notes",
       "sales": "Sales",
+      "shipment": "Shipment",
       "noTags": "No tags",
       "noSales": "No sales",
       "tagUpdateFailed": "Couldn't update the tag",
@@ -535,7 +536,53 @@
       "errorInvalidPrice": "Enter a valid price",
       "errorInvalidDate": "Enter a valid date",
       "toastSuccess": "Sale registered",
-      "toastFailed": "Couldn't register the sale — the tag was added, but no sale was recorded."
+      "toastFailed": "Couldn't register the sale — the tag was added, but no sale was recorded.",
+      "regionLabel": "Delivery region",
+      "regionNone": "None",
+      "regionLima": "Lima",
+      "regionProvincia": "Provincia",
+      "regionHint": "Sets up the shipment record — see the Shipment section below to fill in the delivery details."
+    },
+    "shipment": {
+      "loading": "Loading shipment...",
+      "empty": "No shipment on file yet — pick a delivery region on the sale tag, or the AI bot will start one once the customer shares their delivery details.",
+      "region": {
+        "lima": "Lima",
+        "provincia": "Provincia",
+        "unset": "Region not set"
+      },
+      "status": {
+        "collecting": "Collecting details",
+        "ready": "Ready to ship",
+        "shipped": "Shipped to agency",
+        "at_agency": "At the agency",
+        "out_for_delivery": "Out for delivery",
+        "delivered": "Delivered"
+      },
+      "advance": {
+        "shipped": "Mark shipped",
+        "at_agency": "Mark arrived at agency",
+        "out_for_delivery": "Mark out for delivery",
+        "delivered": "Mark delivered"
+      },
+      "city": "City",
+      "agencyName": "Agency",
+      "agencyAddress": "Agency address",
+      "deliveryAddress": "Delivery address",
+      "deliveryReference": "Reference",
+      "recipientName": "Recipient",
+      "recipientDni": "DNI",
+      "recipientPhone": "Phone",
+      "save": "Save",
+      "saved": "Shipment saved",
+      "saveFailed": "Couldn't save the shipment",
+      "statusUpdated": "Status updated",
+      "statusUpdatedNotified": "Status updated — customer notified on WhatsApp",
+      "statusUpdateFailed": "Couldn't update the status",
+      "sendPhoto": "Send Shalom receipt",
+      "photoTooLarge": "That photo is over 5 MB",
+      "photoSent": "Receipt sent to the customer",
+      "photoSendFailed": "Couldn't send the receipt photo"
     }
   },
   "Reports": {
@@ -1750,7 +1797,8 @@
         "needs_human": "Needs a human",
         "new_sale": "New sale registered",
         "handoff_lima": "Order — Lima",
-        "handoff_provincia": "Order — Provincia"
+        "handoff_provincia": "Order — Provincia",
+        "shipment_ready": "Shipment ready to pack"
       },
       "addTitle": "Add a destination",
       "label": "Label",
@@ -1773,6 +1821,29 @@
       "deleteFailed": "Couldn't delete the destination",
       "deleteSuccess": "Destination deleted",
       "deleteAria": "Delete destination"
+    },
+    "shalomAgencies": {
+      "title": "Shalom agencies",
+      "description": "Real Shalom pickup locations per city, entered once so the AI bot can list them to a Provincia customer instead of an agent screenshotting Shalom's own locator every time.",
+      "empty": "No agencies registered yet.",
+      "addTitle": "Add an agency",
+      "city": "City",
+      "cityPlaceholder": "e.g. Arequipa",
+      "name": "Agency name",
+      "namePlaceholder": "e.g. Shalom Mercaderes",
+      "address": "Address",
+      "addressPlaceholder": "Full street address",
+      "reference": "Reference (optional)",
+      "referencePlaceholder": "e.g. frente al mercado central",
+      "add": "Add",
+      "createMissingFields": "City, name, and address are required",
+      "createFailed": "Couldn't create the agency",
+      "createSuccess": "Agency added",
+      "updateFailed": "Couldn't update the agency",
+      "deleteConfirm": "Delete \"{name}\"? This can't be undone.",
+      "deleteFailed": "Couldn't delete the agency",
+      "deleteSuccess": "Agency deleted",
+      "deleteAria": "Delete agency"
     }
   }
 }

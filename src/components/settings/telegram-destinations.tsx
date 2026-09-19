@@ -23,9 +23,15 @@ import {
 } from '@/components/ui/select';
 import { useTranslations } from 'next-intl';
 
-type EventKey = 'needs_human' | 'new_sale' | 'handoff_lima' | 'handoff_provincia';
+type EventKey = 'needs_human' | 'new_sale' | 'handoff_lima' | 'handoff_provincia' | 'shipment_ready';
 
-const EVENT_KEYS: EventKey[] = ['needs_human', 'new_sale', 'handoff_lima', 'handoff_provincia'];
+const EVENT_KEYS: EventKey[] = [
+  'needs_human',
+  'new_sale',
+  'handoff_lima',
+  'handoff_provincia',
+  'shipment_ready',
+];
 
 interface Destination {
   id: string;

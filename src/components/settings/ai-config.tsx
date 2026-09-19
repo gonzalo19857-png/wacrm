@@ -27,6 +27,7 @@ import {
 import { SettingsPanelHead } from './settings-panel-head';
 import { AiKnowledgeCard } from './ai-knowledge';
 import { TelegramDestinationsCard } from './telegram-destinations';
+import { ShalomAgenciesCard } from './shalom-agencies';
 import { AI_PROVIDER_DEFAULT_MODEL } from '@/lib/ai/defaults';
 import type { AiProvider } from '@/lib/ai/types';
 import type { AccountMember } from '@/types';
@@ -499,6 +500,8 @@ export function AiConfig() {
         </Card>
 
         <TelegramDestinationsCard canEdit={canEdit} />
+
+        <ShalomAgenciesCard canEdit={canEdit} />
 
         <AiKnowledgeCard
           accountId={accountId}

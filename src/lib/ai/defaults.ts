@@ -60,6 +60,19 @@ export const IMAGE_SENTINEL_PREFIX = '[[IMAGE:'
 /** Matches `[[IMAGE:<key>]]`, capturing `<key>`. */
 export const IMAGE_SENTINEL_REGEX = /\[\[IMAGE:([^\]]+)\]\]/
 
+/**
+ * Sentinel the model uses (auto-reply mode) to record delivery
+ * details it has gathered for a Provincia (Shalom) or Lima order —
+ * e.g. `[[SHIPMENT:region=provincia;city=Arequipa;agency=Shalom
+ * Mercaderes;name=Juan Perez;dni=12345678;phone=987654321]]`. Parsed
+ * by `src/lib/ai/shipment.ts#parseShipmentSentinel` and merged into
+ * the contact's `shipments` row (migration 052) — never shown to the
+ * customer, same handling as the image sentinel.
+ */
+export const SHIPMENT_SENTINEL_PREFIX = '[[SHIPMENT:'
+/** Matches `[[SHIPMENT:<payload>]]`, capturing `<payload>`. */
+export const SHIPMENT_SENTINEL_REGEX = /\[\[SHIPMENT:([^\]]+)\]\]/
+
 /** Cap on generated reply length — keeps WhatsApp replies short and
  *  bounds token spend on the caller's own key. Reasoning models (e.g.
  *  OpenRouter's `deepseek/deepseek-*-flash`) spend part of this budget
@@ -97,8 +110,16 @@ export function buildSystemPrompt(args: {
   mode: 'draft' | 'auto_reply'
   /** Knowledge-base excerpts retrieved for the current question. */
   knowledge?: string[]
+  /** Real Shalom agencies for the Provincia city the customer just
+   *  named (migration 052), if any were found — see
+   *  `src/lib/ai/shalom-agencies.ts`. Null/omitted means either no
+   *  city was mentioned or the account hasn't entered that city yet. */
+  shalomAgencies?: { city: string; options: { name: string; address: string; reference: string | null }[] } | null
+  /** One-line summary of the contact's in-progress shipment, if any —
+   *  see `src/lib/ai/shipment.ts#getShipmentStatusContext`. */
+  shipmentContext?: string | null
 }): string {
-  const { userPrompt, mode, knowledge } = args
+  const { userPrompt, mode, knowledge, shalomAgencies, shipmentContext } = args
   const parts: string[] = [
     'You are a customer-messaging assistant for a business that uses a WhatsApp CRM. ' +
       'You are shown the recent WhatsApp conversation between the business (assistant) and a customer (user). ' +
@@ -123,6 +144,18 @@ export function buildSystemPrompt(args: {
     parts.push(
       `If the business context below defines when to simply stay quiet (e.g. the customer closed out the conversation with no new question), reply with exactly ${NOREPLY_SENTINEL} and nothing else — no message will be sent, but auto-reply stays active for the customer's next message. This is different from a handoff: it does not involve a human, it's just choosing not to reply to this particular message.`,
     )
+    parts.push(
+      'Delivery/shipping protocol — follow this once the conversation is actually about where to send a confirmed order (not proactively, and only if the business context above hasn\'t already given you a different one to follow instead):\n' +
+        '- Provincia (any Peruvian city outside Lima), shipped via Shalom: when the customer names their city, check the "Shalom agencies" section below. If it lists agencies for that exact city, present every one of them (name + address, and the reference if given) and ask which they want — use ONLY what is listed there, never a city, agency, or address you are not shown there. If that section is empty or the city isn\'t listed, do not guess — use the plain handoff (or ' +
+        `${HANDOFF_SENTINEL.slice(0, -2)}:provincia]]` +
+        ' if the business context defines that reason) so a human can look it up, exactly as before this feature existed. Once an agency is chosen, ask for the recipient\'s full name, DNI, and the phone number that should receive the shipment (default to the number they are texting from unless they give another).\n' +
+        '- Lima: ask for the full delivery address, a reference point (a nearby landmark), the recipient\'s full name, and phone.\n' +
+        `- The moment you have a new piece of delivery data to record (an agency choice, a name, a DNI, a phone, an address, a reference), emit it on its own line as ${SHIPMENT_SENTINEL_PREFIX}field=value;field2=value2]] using only these keys: region (lima or provincia), city, agency, name, dni, phone, address, reference. Include only fields you actually learned or confirmed this turn — never invent a value, and don't re-send a field already on file (see "Current shipment on file" below) unless it changed. This sentinel is invisible to the customer: never mention it or read its contents back to them.\n` +
+        '- For a Provincia order, once you\'ve sent everything needed (city, agency, name, phone) you do not need to hand off — the business ships it and follows up directly. For a Lima order, once you\'ve collected the address/reference/name/phone, tell the customer a delivery agent will confirm the visit with them, then hand off with ' +
+        `${HANDOFF_SENTINEL.slice(0, -2)}:lima]]` +
+        ' (or the plain handoff sentinel if the business context doesn\'t define that reason) — a human always closes out the actual Lima delivery.\n' +
+        '- If "Current shipment on file" below already shows a field, don\'t ask for it again — only ask for what\'s still missing. If the customer asks about their order\'s status (e.g. "¿ya llegó?"), answer directly from its `status` there instead of guessing or handing off.',
+    )
   }
 
   if (userPrompt && userPrompt.trim()) {
@@ -141,6 +174,19 @@ export function buildSystemPrompt(args: {
           .map((k, i) => `[${i + 1}] ${k}`)
           .join('\n\n---\n\n')}`,
     )
+  }
+
+  if (shalomAgencies && shalomAgencies.options.length > 0) {
+    const list = shalomAgencies.options
+      .map((o) => `- ${o.name} — ${o.address}${o.reference ? ` (${o.reference})` : ''}`)
+      .join('\n')
+    parts.push(
+      `Shalom agencies in ${shalomAgencies.city} (the ONLY valid options for this city — never add, remove, or alter one):\n${list}`,
+    )
+  }
+
+  if (shipmentContext) {
+    parts.push(`Current shipment on file for this contact: ${shipmentContext}`)
   }
 
   return parts.join('\n\n')

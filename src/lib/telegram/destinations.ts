@@ -13,6 +13,7 @@ export type TelegramEventKey =
   | 'new_sale'
   | 'handoff_lima'
   | 'handoff_provincia'
+  | 'shipment_ready'
 
 /**
  * DM every active destination an account has registered for

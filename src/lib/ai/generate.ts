@@ -9,6 +9,7 @@ import {
   HANDOFF_SENTINEL_REGEX,
   IMAGE_SENTINEL_REGEX,
   NOREPLY_SENTINEL,
+  SHIPMENT_SENTINEL_REGEX,
   aiRequestTimeoutMs,
 } from './defaults'
 import { generateOpenAi } from './providers/openai'
@@ -80,6 +81,8 @@ export function parseGeneration(
   const noReply = raw.includes(NOREPLY_SENTINEL)
   const imageMatch = raw.match(IMAGE_SENTINEL_REGEX)
   const imageKey = imageMatch ? imageMatch[1].trim() : null
+  const shipmentMatch = raw.match(SHIPMENT_SENTINEL_REGEX)
+  const shipmentRaw = shipmentMatch ? shipmentMatch[1].trim() : null
   // Strip every occurrence, not just the first: neither regex has a /g
   // flag (match() with one wouldn't give us the capture groups above),
   // but a non-global replace() only removes the first match — if the
@@ -88,11 +91,13 @@ export function parseGeneration(
   // the extraction regexes above are unaffected.
   const handoffSentinelGlobal = new RegExp(HANDOFF_SENTINEL_REGEX.source, 'g')
   const imageSentinelGlobal = new RegExp(IMAGE_SENTINEL_REGEX.source, 'g')
+  const shipmentSentinelGlobal = new RegExp(SHIPMENT_SENTINEL_REGEX.source, 'g')
   const text = raw
     .replace(handoffSentinelGlobal, '')
     .split(NOREPLY_SENTINEL)
     .join('')
     .replace(imageSentinelGlobal, '')
+    .replace(shipmentSentinelGlobal, '')
     .trim()
-  return { text, handoff, handoffReason, noReply, imageKey, usage }
+  return { text, handoff, handoffReason, noReply, imageKey, shipmentRaw, usage }
 }
