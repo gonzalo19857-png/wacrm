@@ -380,6 +380,25 @@ export interface Sale {
   contact?: Contact;
 }
 
+/**
+ * A catalog product (migration 053) — name, price, short description
+ * and photo the account sells. The single source of truth for what's
+ * offered; editing a row here is meant to be the only place price or
+ * photo changes ever need to happen, no prompt-hunting required.
+ */
+export interface Product {
+  id: string;
+  account_id: string;
+  name: string;
+  description?: string | null;
+  price: number;
+  currency: string;
+  image_url?: string | null;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export type BroadcastStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed';
 export type RecipientStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'replied' | 'failed';
 
