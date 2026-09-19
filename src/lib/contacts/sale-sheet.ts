@@ -83,6 +83,58 @@ export async function pushSetRegion(
   await post(config, { action: 'set_region', ...args })
 }
 
+/** Human-readable label for each `shipments.status` value (migration
+ *  052) — matches what the "update_shipment" Apps Script action writes
+ *  into the "Estado envío" column. */
+export const SHIPMENT_STATUS_LABELS: Record<string, string> = {
+  collecting: 'Recolectando datos',
+  ready: 'Listo para despacho',
+  shipped: 'Enviado a agencia',
+  at_agency: 'En agencia',
+  out_for_delivery: 'En camino',
+  delivered: 'Entregado',
+}
+
+/**
+ * Push whatever delivery/shipping fields (migration 052's `shipments`
+ * table) are known so far for a contact's most recent sale row — the
+ * bot's `[[SHIPMENT:...]]` sentinel, an agent's edits in the shipment
+ * panel, and a one-click status change all call this as their data
+ * changes. Only non-empty fields are sent, and the Apps Script only
+ * overwrites the matching cell for whichever ones it receives, so a
+ * partial update (e.g. just `estado`) never blanks the others.
+ *
+ * Same match-by-phone limitation as `pushAppendNote`/`pushSetRegion`:
+ * this finds the most recent "Ventas" row for the phone number, so it
+ * only lands once a sale has actually been pushed there (i.e. the
+ * "Venta" tag has been applied at least once) — a no-op otherwise.
+ */
+export async function pushUpdateShipment(
+  db: SupabaseClient,
+  accountId: string,
+  args: {
+    telefono: string
+    ciudad?: string | null
+    direccion?: string | null
+    agencia?: string | null
+    dni?: string | null
+    estado?: string | null
+  },
+): Promise<void> {
+  const config = await loadSheetWebhook(db, accountId)
+  if (!config) return
+  const { telefono, ciudad, direccion, agencia, dni, estado } = args
+  await post(config, {
+    action: 'update_shipment',
+    telefono,
+    ...(ciudad ? { ciudad } : {}),
+    ...(direccion ? { direccion } : {}),
+    ...(agencia ? { agencia } : {}),
+    ...(dni ? { dni } : {}),
+    ...(estado ? { estado } : {}),
+  })
+}
+
 /**
  * Best-effort extraction of the vehicle model wacrm's own AI bot
  * already identified, by matching the fixed phrasing its system

@@ -3,6 +3,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { getOpenShipmentForContact, overwriteShipmentFields } from '@/lib/shipments/store'
 import { engineSendMedia } from '@/lib/flows/meta-send'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
+import { pushUpdateShipment, SHIPMENT_STATUS_LABELS } from '@/lib/contacts/sale-sheet'
 
 function bad(message: string) {
   return NextResponse.json({ error: message }, { status: 400 })
@@ -68,10 +69,27 @@ export async function POST(
     }
     if (shipment) {
       const patch: Record<string, unknown> = { receipt_photo_url: mediaUrl }
-      if (shipment.status === 'collecting' || shipment.status === 'ready') {
-        patch.status = 'shipped'
-      }
+      const becameShipped = shipment.status === 'collecting' || shipment.status === 'ready'
+      if (becameShipped) patch.status = 'shipped'
       await supabase.from('shipments').update(patch).eq('id', shipment.id)
+
+      if (becameShipped) {
+        try {
+          const { data: photoContact } = await supabase
+            .from('contacts')
+            .select('phone')
+            .eq('id', contactId)
+            .maybeSingle()
+          if (photoContact?.phone) {
+            await pushUpdateShipment(supabase, accountId, {
+              telefono: photoContact.phone,
+              estado: SHIPMENT_STATUS_LABELS.shipped,
+            })
+          }
+        } catch (err) {
+          console.error('[shipment photo] sheet push failed:', err)
+        }
+      }
     }
 
     return NextResponse.json({ ok: true })

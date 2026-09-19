@@ -10,6 +10,7 @@ import {
 } from '@/lib/shipments/store'
 import { engineSendText } from '@/lib/flows/meta-send'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
+import { pushUpdateShipment, SHIPMENT_STATUS_LABELS } from '@/lib/contacts/sale-sheet'
 
 function bad(message: string) {
   return NextResponse.json({ error: message }, { status: 400 })
@@ -78,6 +79,22 @@ export async function POST(
     })
     if (!updated) {
       return NextResponse.json({ error: 'Failed to update the shipment status' }, { status: 500 })
+    }
+
+    try {
+      const { data: statusContact } = await supabase
+        .from('contacts')
+        .select('phone')
+        .eq('id', contactId)
+        .maybeSingle()
+      if (statusContact?.phone) {
+        await pushUpdateShipment(supabase, accountId, {
+          telefono: statusContact.phone,
+          estado: SHIPMENT_STATUS_LABELS[status] ?? status,
+        })
+      }
+    } catch (err) {
+      console.error('[shipment status] sheet push failed:', err)
     }
 
     let notified = false

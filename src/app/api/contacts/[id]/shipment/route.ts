@@ -5,6 +5,7 @@ import {
   overwriteShipmentFields,
   type ShipmentPatch,
 } from '@/lib/shipments/store'
+import { pushUpdateShipment } from '@/lib/contacts/sale-sheet'
 
 function bad(message: string) {
   return NextResponse.json({ error: message }, { status: 400 })
@@ -91,6 +92,26 @@ export async function PATCH(
     if (!shipment) {
       return NextResponse.json({ error: 'Failed to save the shipment' }, { status: 500 })
     }
+
+    try {
+      const { data: patchContact } = await supabase
+        .from('contacts')
+        .select('phone')
+        .eq('id', contactId)
+        .maybeSingle()
+      if (patchContact?.phone) {
+        await pushUpdateShipment(supabase, accountId, {
+          telefono: patchContact.phone,
+          ciudad: shipment.city,
+          direccion: shipment.delivery_address,
+          agencia: shipment.agency_name,
+          dni: shipment.recipient_dni,
+        })
+      }
+    } catch (err) {
+      console.error('[shipment PATCH] sheet push failed:', err)
+    }
+
     return NextResponse.json({ shipment })
   } catch (err) {
     return toErrorResponse(err)

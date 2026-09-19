@@ -16,6 +16,7 @@ import {
 } from './format-whatsapp'
 import { getProductImage } from './product-images'
 import { getShipmentStatusContext, parseShipmentSentinel, upsertShipmentFromSentinel } from './shipment'
+import { pushUpdateShipment } from '@/lib/contacts/sale-sheet'
 import { logAiUsage } from './usage'
 import { engineSendText, engineSendMedia } from '@/lib/flows/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
@@ -250,6 +251,15 @@ export async function dispatchInboundToAiReply(
           fields,
           contactPhone: shipmentContact?.phone ?? null,
         })
+        if (result?.row && shipmentContact?.phone) {
+          await pushUpdateShipment(db, accountId, {
+            telefono: shipmentContact.phone,
+            ciudad: result.row.city,
+            direccion: result.row.delivery_address,
+            agencia: result.row.agency_name,
+            dni: result.row.recipient_dni,
+          })
+        }
         if (result?.becameReady) {
           await sendShipmentReadyTelegramAlert(db, {
             accountId,
