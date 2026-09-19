@@ -99,6 +99,9 @@ export function limaTimeHint(now: number = Date.now()): string {
   const limaNow = new Date(now - 5 * 60 * 60 * 1000)
   const hour = limaNow.getUTCHours()
   const minute = limaNow.getUTCMinutes()
+  // getUTCDay() is intentional: `limaNow` has already been shifted to
+  // Peru's fixed UTC-5 clock, so its UTC fields now represent Lima time.
+  const isSaturdayInPeru = limaNow.getUTCDay() === 6
   const label = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
   const bucket =
     hour >= 5 && hour < 12
@@ -106,7 +109,10 @@ export function limaTimeHint(now: number = Date.now()): string {
       : hour >= 12 && hour < 19
         ? 'Es de tarde en Perú — el saludo correcto es "Buenas tardes".'
         : 'Es de noche/madrugada en Perú — el saludo correcto es "Buenas noches".'
-  return `${bucket} Hora exacta en Perú ahora mismo: ${label}.`
+  const provinciaDispatchHint = isSaturdayInPeru
+    ? 'Hoy es sábado en Perú: para pedidos a provincia informa un plazo máximo de 48 horas e indica brevemente que el domingo no se trabaja. No prometas 24 horas para provincia hoy.'
+    : 'Hoy no es sábado en Perú: para pedidos a provincia informa un plazo máximo de 24 horas. No menciones un plazo de 48 horas ni el domingo salvo que el cliente lo pregunte.'
+  return `${bucket} Hora exacta en Perú ahora mismo: ${label}. ${provinciaDispatchHint}`
 }
 
 /** Per-call provider timeout. Override with `AI_REQUEST_TIMEOUT_MS`. */
