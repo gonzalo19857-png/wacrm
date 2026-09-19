@@ -103,7 +103,7 @@ export async function dispatchInboundToAiReply(
 
     const { data: conv, error: convErr } = await db
       .from('conversations')
-      .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count, last_message_at')
+      .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count, last_message_at, last_message_sender_type')
       .eq('id', conversationId)
       .maybeSingle()
     if (convErr || !conv) return
@@ -145,15 +145,22 @@ export async function dispatchInboundToAiReply(
     const debounceMs = aiDebounceMs()
     if (debounceMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, debounceMs))
-      const { data: recheck } = await db
-        .from('conversations')
-        .select('last_message_at')
-        .eq('id', conversationId)
-        .maybeSingle()
-      if (recheck && recheck.last_message_at !== conv.last_message_at) {
-        return
-      }
     }
+
+    // Do this re-read even when debounce is set to 0.  The database claim
+    // below uses this precise inbound watermark, which lets only one webhook
+    // invocation own a burst when Meta delivers several messages at once.
+    const { data: recheck } = await db
+      .from('conversations')
+      .select('last_message_at, last_message_sender_type')
+      .eq('id', conversationId)
+      .maybeSingle()
+    if (!recheck ||
+        recheck.last_message_sender_type !== 'customer' ||
+        recheck.last_message_at !== conv.last_message_at) {
+      return
+    }
+    const inboundWatermark = recheck.last_message_at
 
     const messages = await buildConversationContext(db, conversationId)
     if (messages.length === 0) return
@@ -350,18 +357,20 @@ export async function dispatchInboundToAiReply(
     // skip the send. (We consume a slot slightly before the send lands —
     // fail-safe: under-reply rather than over-reply.)
     const { data: claimed, error: claimErr } = await db.rpc(
-      'claim_ai_reply_slot',
+      'claim_ai_reply_for_latest_inbound',
       {
         conversation_id: conversationId,
         max_replies: config.autoReplyMaxPerConversation,
+        expected_last_message_at: inboundWatermark,
       },
     )
     if (claimErr) {
       // A real error here (vs. losing the cap race) is almost always a
-      // deploy issue — e.g. `claim_ai_reply_slot` not EXECUTE-able by the
-      // service role, or the migration not applied. Log it loudly: a
-      // silent return makes "auto-reply never fires" undiagnosable.
-      console.error('[ai auto-reply] claim_ai_reply_slot failed:', claimErr)
+      // deploy issue — e.g. `claim_ai_reply_for_latest_inbound` not
+      // EXECUTE-able by the service role, or the migration not applied.
+      // Log it loudly: a silent return makes "auto-reply never fires"
+      // undiagnosable.
+      console.error('[ai auto-reply] claim_ai_reply_for_latest_inbound failed:', claimErr)
       return
     }
     if (claimed !== true) return // lost the per-conversation cap race

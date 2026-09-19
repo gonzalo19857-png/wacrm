@@ -110,9 +110,42 @@ export function limaTimeHint(now: number = Date.now()): string {
         ? 'Es de tarde en Perú — el saludo correcto es "Buenas tardes".'
         : 'Es de noche/madrugada en Perú — el saludo correcto es "Buenas noches".'
   const provinciaDispatchHint = isSaturdayInPeru
-    ? 'Hoy es sábado en Perú: para pedidos a provincia informa un plazo máximo de 48 horas e indica brevemente que el domingo no se trabaja. No prometas 24 horas para provincia hoy.'
+    ? 'Hoy es sábado en Perú: para pedidos a provincia informa un plazo máximo de 48 horas. No expliques ni menciones el domingo salvo que el cliente lo pregunte. No prometas 24 horas para provincia hoy.'
     : 'Hoy no es sábado en Perú: para pedidos a provincia informa un plazo máximo de 24 horas. No menciones un plazo de 48 horas ni el domingo salvo que el cliente lo pregunte.'
-  return `${bucket} Hora exacta en Perú ahora mismo: ${label}. ${provinciaDispatchHint}`
+  return `${bucket} Hora exacta en Perú ahora mismo: ${label}. ${provinciaDispatchHint} ${limaDeliverySlotsHint(hour, minute)}`
+}
+
+/** The business's fixed same-day Lima delivery windows, in Lima local
+ *  time — see `limaDeliverySlotsHint` below. */
+const LIMA_DELIVERY_SLOTS = [
+  { emoji: '🕙', label: 'Turno mañana: 10:00 am – 12:00 pm', endMinutes: 12 * 60 },
+  { emoji: '🕑', label: 'Turno tarde: 2:00 pm – 4:00 pm', endMinutes: 16 * 60 },
+  { emoji: '🌆', label: 'Turno noche: 5:00 pm – 8:00 pm', endMinutes: 20 * 60 },
+]
+
+/**
+ * Which of today's same-day Lima delivery slots are still open, computed
+ * deterministically from the clock rather than left to the model — a
+ * live simulation (three fixed hours, same conversation) showed
+ * gpt-4o-mini offering "Turno tarde" and "Turno noche" verbatim
+ * regardless of the given hour, including at 21:00 when both had long
+ * closed. Asking it to only *echo* a pre-filtered list (and to say so
+ * in singular when exactly one remains) is the fix; asking it to
+ * *compute* the filter, even with explicit per-slot cutoffs spelled
+ * out in the account's own prompt, was not reliable enough to trust
+ * with a same-day delivery promise.
+ */
+function limaDeliverySlotsHint(hour: number, minute: number): string {
+  const nowMinutes = hour * 60 + minute
+  const remaining = LIMA_DELIVERY_SLOTS.filter((s) => nowMinutes < s.endMinutes)
+  if (remaining.length === 0) {
+    return 'Turnos de entrega de HOY en Lima: ya no queda ninguno disponible (los 3 ya pasaron) — no ofrezcas ningún turno de hoy.'
+  }
+  const list = remaining.map((s) => `${s.emoji} ${s.label}`).join(' / ')
+  if (remaining.length === 1) {
+    return `Turnos de entrega de HOY en Lima: queda EXACTAMENTE 1 disponible — ${list}. Cópialo tal cual, no calcules tú los horarios ni agregues otro.`
+  }
+  return `Turnos de entrega de HOY en Lima que aún no pasaron (cópialos tal cual, no calcules tú los horarios): ${list}.`
 }
 
 /** Per-call provider timeout. Override with `AI_REQUEST_TIMEOUT_MS`. */
@@ -186,6 +219,9 @@ export function buildSystemPrompt(args: {
     )
     parts.push(
       `If the business context below defines a process for collecting delivery/shipping details (an agency or address, a recipient name, DNI, phone, a delivery time slot, etc.), follow that process, and record whatever you confirm along the way by emitting it on its own line as ${SHIPMENT_SENTINEL_PREFIX}field=value;field2=value2]] using only these keys: region (lima or provincia), city, agency, name, dni, phone, address, reference, notes (free text — e.g. a chosen delivery slot/day). Include only fields you actually learned or confirmed this turn — never invent a value for any of them (an agency name, an address, a reference point — nothing you weren't explicitly told by the customer or given verbatim in this system prompt), and don't re-send a field already on file (see "Current shipment on file" below) unless it changed. Map by MEANING, not by the order the customer typed things in: when a customer sends several pieces of data in one message (with or without their own labels, e.g. "NOMBRE=...", a city, an agency, all on separate lines), read the whole message and match each value to the right key by what it actually is — \`name\` is always a person's full name, never a place; \`city\`/\`agency\`/\`address\` are always places, never a person's name. Double-check before emitting: a value that looks like a place (has a department/city name, or matches something already in \`city\`) must never end up in \`name\`. This sentinel is invisible to the customer: never mention it or read its contents back to them. If "Current shipment on file" below already shows a field, don't ask for it again — only ask for what's still missing, and if the customer asks about their order's status (e.g. "¿ya llegó?"), answer directly from its \`status\` there instead of guessing or handing off.`,
+    )
+    parts.push(
+      `Payment safety rule: never ask the customer to choose a payment method or give payment details until the delivery record is complete. For Provincia this means region, city, agency/address, recipient's full name, and DNI; the WhatsApp number may be used as the phone unless the customer gives another one. If any required detail is missing, ask only for the missing detail. Never treat 👍, "ok", "listo", or another brief acknowledgement as a payment selection or payment confirmation. An uncaptioned customer image is only possible payment proof when it follows the payment instructions in this same order flow; otherwise ask what it relates to. Do not announce an order as paid, confirmed, ready, or eligible for a prepayment discount without that actual proof.`,
     )
   }
 

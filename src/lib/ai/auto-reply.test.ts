@@ -114,6 +114,7 @@ beforeEach(() => {
     ai_autoreply_disabled: false,
     ai_reply_count: 0,
     last_message_at: '2026-01-01T00:00:00Z',
+    last_message_sender_type: 'customer',
   }
   h.state.autoResponders = []
   h.state.claim = true
@@ -138,8 +139,12 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     await dispatchInboundToAiReply(ARGS)
     expect(h.state.rpcCalls).toEqual([
       {
-        name: 'claim_ai_reply_slot',
-        args: { conversation_id: 'conv-1', max_replies: 3 },
+        name: 'claim_ai_reply_for_latest_inbound',
+        args: {
+          conversation_id: 'conv-1',
+          max_replies: 3,
+          expected_last_message_at: '2026-01-01T00:00:00Z',
+        },
       },
     ])
     expect(h.engineSendText).toHaveBeenCalledWith(

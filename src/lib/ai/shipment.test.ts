@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { parseShipmentSentinel } from './shipment'
+import { isShipmentReady } from '@/lib/shipments/store'
 
 describe('parseShipmentSentinel', () => {
   it('parses every known key', () => {
@@ -83,5 +84,25 @@ describe('parseShipmentSentinel', () => {
 
   it('keeps a normal name untouched', () => {
     expect(parseShipmentSentinel('city=Piura;name=Carlos Castillo').name).toBe('Carlos Castillo')
+  })
+})
+
+describe('isShipmentReady', () => {
+  const provinceOrder = {
+    region: 'provincia' as const,
+    city: 'Sullana',
+    agency_name: 'Shalom Zona Industrial',
+    delivery_address: null,
+    recipient_name: 'Carlos Javier Castillo Cueva',
+    recipient_dni: '03671988',
+    recipient_phone: '51999999999',
+  }
+
+  it('does not mark a Provincia order ready before it has a DNI', () => {
+    expect(isShipmentReady({ ...provinceOrder, recipient_dni: null })).toBe(false)
+  })
+
+  it('marks a Provincia order ready only with its required data', () => {
+    expect(isShipmentReady(provinceOrder)).toBe(true)
   })
 })

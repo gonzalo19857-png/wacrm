@@ -85,10 +85,13 @@ export function isShipmentReady(row: {
   agency_name: string | null
   delivery_address: string | null
   recipient_name: string | null
+  recipient_dni: string | null
   recipient_phone: string | null
 }): boolean {
   if (row.region === 'provincia') {
-    return !!(row.city && row.agency_name && row.recipient_name && row.recipient_phone)
+    return !!(
+      row.city && row.agency_name && row.recipient_name && row.recipient_dni && row.recipient_phone
+    )
   }
   if (row.region === 'lima') {
     return !!(row.delivery_address && row.recipient_name && row.recipient_phone)

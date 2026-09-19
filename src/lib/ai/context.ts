@@ -5,6 +5,7 @@ import { aiContextMessageLimit } from './defaults'
 interface DbMessage {
   sender_type: 'customer' | 'agent' | 'bot'
   content_text: string | null
+  content_type: 'text' | 'image'
 }
 
 /**
@@ -34,7 +35,7 @@ export async function buildConversationContext(
 ): Promise<ChatMessage[]> {
   const { data, error } = await db
     .from('messages')
-    .select('sender_type, content_text')
+    .select('sender_type, content_text, content_type')
     .eq('conversation_id', conversationId)
     .in('content_type', ['text', 'image'])
     .order('created_at', { ascending: false })
@@ -43,10 +44,21 @@ export async function buildConversationContext(
   if (error) throw error
 
   const rows = ((data ?? []) as DbMessage[]).reverse()
-  return rows
-    .filter((m) => m.content_text && m.content_text.trim())
-    .map((m) => ({
-      role: m.sender_type === 'customer' ? 'user' : 'assistant',
-      content: m.content_text!.trim(),
-    }))
+  return rows.flatMap((m) => {
+    if (m.content_text && m.content_text.trim()) {
+      return [{
+        role: m.sender_type === 'customer' ? 'user' as const : 'assistant' as const,
+        content: m.content_text.trim(),
+      }]
+    }
+
+    // A payment receipt usually arrives as an uncaptioned image. Keep that
+    // fact in the model's context (without pretending we read the image), so
+    // it can advance only when the preceding conversation makes clear this
+    // was the requested proof rather than treating a 👍 as payment.
+    if (m.sender_type === 'customer' && m.content_type === 'image') {
+      return [{ role: 'user' as const, content: '[El cliente envió una imagen.]' }]
+    }
+    return []
+  })
 }
