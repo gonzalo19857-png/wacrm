@@ -84,7 +84,7 @@ export const MAX_OUTPUT_TOKENS = 2048
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
 const DEFAULT_CONTEXT_MESSAGE_LIMIT = 20
-const DEFAULT_AI_DEBOUNCE_MS = 4_000
+const DEFAULT_AI_DEBOUNCE_MS = 6_000
 
 /**
  * Peru doesn't observe DST, so a fixed UTC-5 offset is always correct.
