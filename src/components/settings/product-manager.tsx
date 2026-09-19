@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Package, Pencil, Plus, Trash2, ImagePlus } from 'lucide-react';
+import { Loader2, Package, Pencil, Plus, Trash2, ImagePlus, Images } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
@@ -26,6 +26,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { CURRENCIES } from '@/lib/currency';
+import { ProductMediaDialog } from '@/components/settings/product-media-dialog';
 import type { Product } from '@/types';
 
 interface ProductDraft {
@@ -66,6 +67,7 @@ export function ProductManager() {
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [mediaTarget, setMediaTarget] = useState<Product | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -256,6 +258,16 @@ export function ProductManager() {
                       type="button"
                       variant="ghost"
                       size="icon"
+                      onClick={() => setMediaTarget(product)}
+                      aria-label={`Photos and video for ${product.name}`}
+                      title="Photos & video"
+                    >
+                      <Images className="size-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
                       onClick={() => openEdit(product)}
                       aria-label={`Edit ${product.name}`}
                     >
@@ -436,6 +448,11 @@ export function ProductManager() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ProductMediaDialog
+        product={mediaTarget}
+        onOpenChange={(next) => !next && setMediaTarget(null)}
+      />
     </Card>
   );
 }

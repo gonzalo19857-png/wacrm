@@ -399,6 +399,23 @@ export interface Product {
   updated_at: string;
 }
 
+/**
+ * An extra photo or video for a product (migration 054) — beyond the
+ * one generic `Product.image_url`, e.g. a real installation photo or
+ * a short demo video the bot can send when a customer asks to see
+ * more.
+ */
+export interface ProductMedia {
+  id: string;
+  account_id: string;
+  product_id: string;
+  kind: 'image' | 'video';
+  url: string;
+  caption?: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
 export type BroadcastStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed';
 export type RecipientStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'replied' | 'failed';
 
