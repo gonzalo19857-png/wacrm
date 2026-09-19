@@ -15,6 +15,10 @@ export default defineConfig({
       ENCRYPTION_KEY:
         "0000000000000000000000000000000000000000000000000000000000000000",
       META_APP_SECRET: "test-meta-app-secret",
+      // Disable the auto-reply debounce (defaults.ts#aiDebounceMs) in
+      // tests — otherwise every dispatchInboundToAiReply test would
+      // actually sleep for the default 4s.
+      AI_DEBOUNCE_MS: "0",
     },
     clearMocks: true,
   },

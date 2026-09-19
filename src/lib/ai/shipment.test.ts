@@ -5,7 +5,7 @@ describe('parseShipmentSentinel', () => {
   it('parses every known key', () => {
     expect(
       parseShipmentSentinel(
-        'region=provincia;city=Arequipa;agency=Shalom Mercaderes;name=Juan Perez;dni=12345678;phone=987654321;address=Av. Siempre Viva 123;reference=frente al parque',
+        'region=provincia;city=Arequipa;agency=Shalom Mercaderes;name=Juan Perez;dni=12345678;phone=987654321;address=Av. Siempre Viva 123;reference=frente al parque;notes=Turno tarde 2-4pm',
       ),
     ).toEqual({
       region: 'provincia',
@@ -16,6 +16,7 @@ describe('parseShipmentSentinel', () => {
       phone: '987654321',
       address: 'Av. Siempre Viva 123',
       reference: 'frente al parque',
+      notes: 'Turno tarde 2-4pm',
     })
   })
 
@@ -34,6 +35,7 @@ describe('parseShipmentSentinel', () => {
       phone: null,
       address: null,
       reference: null,
+      notes: null,
     })
   })
 
@@ -47,6 +49,7 @@ describe('parseShipmentSentinel', () => {
       phone: null,
       address: null,
       reference: null,
+      notes: null,
     })
   })
 
@@ -58,6 +61,12 @@ describe('parseShipmentSentinel', () => {
   it('trims whitespace around keys and values', () => {
     expect(parseShipmentSentinel(' name = Juan Perez ; dni = 12345678 ')).toEqual(
       expect.objectContaining({ name: 'Juan Perez', dni: '12345678' }),
+    )
+  })
+
+  it('parses a Lima delivery-slot note', () => {
+    expect(parseShipmentSentinel('region=lima;address=Surco;notes=Hoy, turno tarde 2-4pm').notes).toBe(
+      'Hoy, turno tarde 2-4pm',
     )
   })
 })

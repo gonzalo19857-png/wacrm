@@ -16,6 +16,9 @@ export interface ParsedShipmentFields {
   phone: string | null
   address: string | null
   reference: string | null
+  /** Free-text extras that don't fit another column — e.g. a Lima
+   *  same-day/next-day delivery slot the customer picked. */
+  notes: string | null
 }
 
 const EMPTY_FIELDS: ParsedShipmentFields = {
@@ -27,6 +30,7 @@ const EMPTY_FIELDS: ParsedShipmentFields = {
   phone: null,
   address: null,
   reference: null,
+  notes: null,
 }
 
 /**
@@ -68,6 +72,7 @@ function toPatch(fields: ParsedShipmentFields): ShipmentPatch {
   if (fields.phone) patch.recipient_phone = fields.phone
   if (fields.address) patch.delivery_address = fields.address
   if (fields.reference) patch.delivery_reference = fields.reference
+  if (fields.notes) patch.notes = fields.notes
   return patch
 }
 
@@ -81,9 +86,23 @@ function toPatch(fields: ParsedShipmentFields): ShipmentPatch {
  */
 export async function upsertShipmentFromSentinel(
   db: SupabaseClient,
-  args: { accountId: string; contactId: string; fields: ParsedShipmentFields },
+  args: {
+    accountId: string
+    contactId: string
+    fields: ParsedShipmentFields
+    /** The contact's own WhatsApp number — the model's context never
+     *  contains raw phone digits (only message text), so it can
+     *  never fill `phone=` in the sentinel unless the customer typed
+     *  a different number in chat. Defaulting here (fillBlanksOnly,
+     *  so an explicit sentinel value or an agent's edit always wins)
+     *  is what actually gets `recipient_phone` populated in practice. */
+    contactPhone?: string | null
+  },
 ): Promise<{ row: ShipmentRow; becameReady: boolean } | null> {
   const patch = toPatch(args.fields)
+  if (args.contactPhone && !patch.recipient_phone) {
+    patch.recipient_phone = args.contactPhone
+  }
   if (Object.keys(patch).length === 0) return null
   return mergeShipmentFields(db, {
     accountId: args.accountId,
@@ -116,6 +135,7 @@ export async function getShipmentStatusContext(
     if (row.recipient_name) lines.push(`name=${row.recipient_name}`)
     if (row.recipient_dni) lines.push(`dni=${row.recipient_dni}`)
     if (row.recipient_phone) lines.push(`phone=${row.recipient_phone}`)
+    if (row.notes) lines.push(`notes=${row.notes}`)
     return lines.join('; ')
   } catch (err) {
     console.error('[shipment] status context lookup failed:', err)

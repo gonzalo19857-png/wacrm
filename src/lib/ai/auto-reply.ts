@@ -3,7 +3,7 @@ import { loadAiConfig } from './config'
 import { buildConversationContext } from './context'
 import { retrieveKnowledgeForMessages } from './knowledge'
 import { generateReply } from './generate'
-import { buildSystemPrompt } from './defaults'
+import { aiDebounceMs, buildSystemPrompt, limaTimeHint } from './defaults'
 import {
   buildHandoffSummary,
   quoteLastCustomerMessage,
@@ -15,7 +15,6 @@ import {
   stripRepeatedRecommendation,
 } from './format-whatsapp'
 import { getProductImage } from './product-images'
-import { findShalomAgenciesForMessages } from './shalom-agencies'
 import { getShipmentStatusContext, parseShipmentSentinel, upsertShipmentFromSentinel } from './shipment'
 import { logAiUsage } from './usage'
 import { engineSendText, engineSendMedia } from '@/lib/flows/meta-send'
@@ -103,7 +102,7 @@ export async function dispatchInboundToAiReply(
 
     const { data: conv, error: convErr } = await db
       .from('conversations')
-      .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count')
+      .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count, last_message_at')
       .eq('id', conversationId)
       .maybeSingle()
     if (convErr || !conv) return
@@ -127,6 +126,32 @@ export async function dispatchInboundToAiReply(
     if (conv.ai_reply_count >= config.autoReplyMaxPerConversation) {
       await notifyNeedsHuman()
       return
+    }
+
+    // Debounce: give a customer who's mid-burst (several short messages a
+    // few seconds apart — "Hola" / "Kia Seltos" / "precio") a moment to
+    // finish before generating a reply. Without this, each message fires
+    // its own LLM call and the customer gets 2-3 overlapping/duplicate
+    // replies seconds apart (observed live: the same talla recommendation
+    // sent twice, 2s apart). `last_message_at` is already the
+    // per-conversation "latest inbound" marker (bumped by
+    // bump_conversation_on_inbound on every customer message), so it
+    // doubles as a free debounce token: remember it now, sleep, then bail
+    // if it moved — a newer inbound message means a later invocation of
+    // this same function is now responsible for replying to the whole
+    // burst (buildConversationContext below re-queries fresh, so it picks
+    // up every message the customer sent during the wait).
+    const debounceMs = aiDebounceMs()
+    if (debounceMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, debounceMs))
+      const { data: recheck } = await db
+        .from('conversations')
+        .select('last_message_at')
+        .eq('id', conversationId)
+        .maybeSingle()
+      if (recheck && recheck.last_message_at !== conv.last_message_at) {
+        return
+      }
     }
 
     const messages = await buildConversationContext(db, conversationId)
@@ -158,27 +183,14 @@ export async function dispatchInboundToAiReply(
       messages,
     )
 
-    // Delivery-flow grounding (migration 052): real Shalom agencies for
-    // whatever Provincia city was just named, plus a summary of any
-    // shipment already on file — both best-effort, never block the
-    // reply if either lookup fails.
-    const [shalomAgencies, shipmentContext] = await Promise.all([
-      findShalomAgenciesForMessages(db, accountId, messages),
-      getShipmentStatusContext(db, accountId, contactId),
-    ])
+    // Delivery-flow grounding (migration 052): a summary of any
+    // shipment already on file — best-effort, never block the reply if
+    // the lookup fails.
+    const shipmentContext = await getShipmentStatusContext(db, accountId, contactId)
 
-    // Peru doesn't observe DST, so a fixed UTC-5 offset is always
-    // correct — lets the model greet with the right "Buenos días /
-    // buenas tardes / buenas noches" instead of guessing (it has no
-    // other way to know the current time; the conversation history it
-    // sees carries no timestamps).
-    const limaHour = new Date(Date.now() - 5 * 60 * 60 * 1000).getUTCHours()
-    const greetingHint =
-      limaHour >= 5 && limaHour < 12
-        ? 'Es de mañana en Perú — el saludo correcto es "Buenos días".'
-        : limaHour >= 12 && limaHour < 19
-          ? 'Es de tarde en Perú — el saludo correcto es "Buenas tardes".'
-          : 'Es de noche/madrugada en Perú — el saludo correcto es "Buenas noches".'
+    // The model has no other way to know the current time — the
+    // conversation history it sees carries no timestamps.
+    const greetingHint = limaTimeHint()
     const userPromptWithTime = config.systemPrompt
       ? `${config.systemPrompt}\n\n${greetingHint}`
       : greetingHint
@@ -187,7 +199,6 @@ export async function dispatchInboundToAiReply(
       userPrompt: userPromptWithTime,
       mode: 'auto_reply',
       knowledge,
-      shalomAgencies,
       shipmentContext,
     })
 
@@ -228,7 +239,17 @@ export async function dispatchInboundToAiReply(
     if (shipmentRaw) {
       try {
         const fields = parseShipmentSentinel(shipmentRaw)
-        const result = await upsertShipmentFromSentinel(db, { accountId, contactId, fields })
+        const { data: shipmentContact } = await db
+          .from('contacts')
+          .select('phone')
+          .eq('id', contactId)
+          .maybeSingle()
+        const result = await upsertShipmentFromSentinel(db, {
+          accountId,
+          contactId,
+          fields,
+          contactPhone: shipmentContact?.phone ?? null,
+        })
         if (result?.becameReady) {
           await sendShipmentReadyTelegramAlert(db, {
             accountId,

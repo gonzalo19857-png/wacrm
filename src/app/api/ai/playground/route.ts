@@ -4,7 +4,7 @@ import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit
 import { loadAiConfig } from '@/lib/ai/config'
 import { retrieveKnowledgeForMessages } from '@/lib/ai/knowledge'
 import { generateReply } from '@/lib/ai/generate'
-import { buildSystemPrompt } from '@/lib/ai/defaults'
+import { buildSystemPrompt, limaTimeHint } from '@/lib/ai/defaults'
 import {
   enforceWhatsAppEmphasis,
   stripRepeatedRecommendation,
@@ -81,8 +81,14 @@ export async function POST(request: Request) {
       config,
       messages,
     )
+    // Same time context the live bot gets (see auto-reply.ts) — without
+    // it, a Playground test can't exercise same-day delivery-slot logic
+    // that depends on the current Lima clock.
+    const userPromptWithTime = config.systemPrompt
+      ? `${config.systemPrompt}\n\n${limaTimeHint()}`
+      : limaTimeHint()
     const systemPrompt = buildSystemPrompt({
-      userPrompt: config.systemPrompt,
+      userPrompt: userPromptWithTime,
       mode: 'auto_reply',
       knowledge,
     })

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { AiConfig } from './types'
 
 // Shared, hoisted mock state so the module mocks can close over it.
@@ -18,6 +18,11 @@ const h = vi.hoisted(() => ({
     claim: true as boolean,
     updatePayload: null as Record<string, unknown> | null,
     rpcCalls: [] as { name: string; args: unknown }[],
+    // When set, the SECOND+ conversations select (the debounce recheck)
+    // returns this instead of `conv` — lets a test simulate a newer
+    // inbound message landing during the debounce wait.
+    convOnRecheck: null as Record<string, unknown> | null,
+    convSelectCount: 0,
   },
 }))
 
@@ -56,8 +61,14 @@ vi.mock('./admin-client', () => ({
       return {
         select: () => ({
           eq: () => ({
-            maybeSingle: () =>
-              Promise.resolve({ data: h.state.conv, error: null }),
+            maybeSingle: () => {
+              h.state.convSelectCount += 1
+              const data =
+                h.state.convSelectCount > 1 && h.state.convOnRecheck !== null
+                  ? h.state.convOnRecheck
+                  : h.state.conv
+              return Promise.resolve({ data, error: null })
+            },
           }),
         }),
         update: (payload: Record<string, unknown>) => {
@@ -102,11 +113,14 @@ beforeEach(() => {
     assigned_agent_id: null,
     ai_autoreply_disabled: false,
     ai_reply_count: 0,
+    last_message_at: '2026-01-01T00:00:00Z',
   }
   h.state.autoResponders = []
   h.state.claim = true
   h.state.updatePayload = null
   h.state.rpcCalls = []
+  h.state.convOnRecheck = null
+  h.state.convSelectCount = 0
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.retrieveKnowledge.mockResolvedValue({ excerpts: [], imageUrl: null })
@@ -405,5 +419,23 @@ describe('dispatchInboundToAiReply — needs-human Telegram alerts', () => {
       expect.anything(),
       expect.objectContaining({ reason: 'handoff', handoffReason: 'lima' }),
     )
+  })
+})
+
+describe('dispatchInboundToAiReply — debounce', () => {
+  afterEach(() => vi.unstubAllEnvs())
+
+  it('still replies when no newer inbound message lands during the debounce wait', async () => {
+    vi.stubEnv('AI_DEBOUNCE_MS', '5')
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalled()
+  })
+
+  it('bails without replying when a newer inbound message lands during the wait — a later invocation owns the whole burst', async () => {
+    vi.stubEnv('AI_DEBOUNCE_MS', '5')
+    h.state.convOnRecheck = { ...h.state.conv, last_message_at: '2026-01-01T00:00:05Z' }
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.generateReply).not.toHaveBeenCalled()
   })
 })
