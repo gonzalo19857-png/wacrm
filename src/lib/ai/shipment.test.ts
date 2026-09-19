@@ -69,4 +69,19 @@ describe('parseShipmentSentinel', () => {
       'Hoy, turno tarde 2-4pm',
     )
   })
+
+  it('drops a name that is actually a place (parenthetical annotation)', () => {
+    // Regression: a multi-line customer message ("NOMBRE=Carlos.../
+    // LUGAR=Sullana (Piura)/Shalom (Zona Industrial)") got mismapped
+    // live, with the city landing in `name` instead of the real name.
+    expect(parseShipmentSentinel('city=PIURA;name=SULLANA (PIURA)').name).toBeNull()
+  })
+
+  it('drops a name that literally contains the city just parsed', () => {
+    expect(parseShipmentSentinel('city=Trujillo;name=Trujillo').name).toBeNull()
+  })
+
+  it('keeps a normal name untouched', () => {
+    expect(parseShipmentSentinel('city=Piura;name=Carlos Castillo').name).toBe('Carlos Castillo')
+  })
 })

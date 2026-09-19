@@ -59,6 +59,22 @@ export function parseShipmentSentinel(raw: string): ParsedShipmentFields {
       ;(fields as unknown as Record<string, string | null>)[key] = value
     }
   }
+
+  // Sanity check: a recipient name should never actually be a place.
+  // Catches the model occasionally mismapping a multi-line customer
+  // message (e.g. "NOMBRE=Juan Perez / LUGAR=Sullana (Piura)") — seen
+  // live once, with the city landing in `name` instead of the actual
+  // name. Cheap and deliberately narrow: only drops `name` when it's
+  // clearly not a person (a parenthetical annotation, or it literally
+  // contains the city just parsed) — never touches a name that's just
+  // unusual-looking.
+  if (fields.name) {
+    const looksLikeAPlace =
+      /[()]/.test(fields.name) ||
+      (fields.city !== null && fields.name.toLowerCase().includes(fields.city.toLowerCase()))
+    if (looksLikeAPlace) fields.name = null
+  }
+
   return fields
 }
 
