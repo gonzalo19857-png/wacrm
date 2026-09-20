@@ -102,6 +102,7 @@ export function limaTimeHint(now: number = Date.now()): string {
   // getUTCDay() is intentional: `limaNow` has already been shifted to
   // Peru's fixed UTC-5 clock, so its UTC fields now represent Lima time.
   const isSaturdayInPeru = limaNow.getUTCDay() === 6
+  const isSundayInPeru = limaNow.getUTCDay() === 0
   const label = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
   const bucket =
     hour >= 5 && hour < 12
@@ -112,7 +113,7 @@ export function limaTimeHint(now: number = Date.now()): string {
   const provinciaDispatchHint = isSaturdayInPeru
     ? 'Hoy es sábado en Perú: para pedidos a provincia informa un plazo máximo de 48 horas. No expliques ni menciones el domingo salvo que el cliente lo pregunte. No prometas 24 horas para provincia hoy.'
     : 'Hoy no es sábado en Perú: para pedidos a provincia informa un plazo máximo de 24 horas. No menciones un plazo de 48 horas ni el domingo salvo que el cliente lo pregunte.'
-  return `${bucket} Hora exacta en Perú ahora mismo: ${label}. ${provinciaDispatchHint} ${limaDeliverySlotsHint(hour, minute)}`
+  return `${bucket} Hora exacta en Perú ahora mismo: ${label}. ${provinciaDispatchHint} ${limaDeliverySlotsHint(hour, minute, isSundayInPeru)}`
 }
 
 /** The business's fixed same-day Lima delivery windows, in Lima local
@@ -134,8 +135,17 @@ const LIMA_DELIVERY_SLOTS = [
  * *compute* the filter, even with explicit per-slot cutoffs spelled
  * out in the account's own prompt, was not reliable enough to trust
  * with a same-day delivery promise.
+ *
+ * There is no Sunday delivery run in Lima, so on a Sunday every slot
+ * gets pushed to Monday instead of being computed against today's
+ * clock — the business was seeing the bot schedule Lima drop-offs for
+ * a Sunday that doesn't have a delivery run at all.
  */
-function limaDeliverySlotsHint(hour: number, minute: number): string {
+function limaDeliverySlotsHint(hour: number, minute: number, isSundayInPeru: boolean): string {
+  if (isSundayInPeru) {
+    const list = LIMA_DELIVERY_SLOTS.map((s) => `${s.emoji} ${s.label}`).join(' / ')
+    return `Hoy es domingo en Perú: no hay reparto en Lima los domingos. Si el cliente pide entrega en Lima, ofrece los turnos de MAÑANA LUNES (no de hoy): ${list}. Deja claro que es para mañana lunes, no para hoy.`
+  }
   const nowMinutes = hour * 60 + minute
   const remaining = LIMA_DELIVERY_SLOTS.filter((s) => nowMinutes < s.endMinutes)
   if (remaining.length === 0) {

@@ -34,4 +34,15 @@ describe('limaTimeHint', () => {
     const noneLeft = limaTimeHint(ninePmPeru)
     expect(noneLeft).toContain('ya no queda ninguno disponible')
   })
+
+  it('pushes Lima delivery slots to Monday when today is Sunday in Peru', () => {
+    // Sunday 2026-09-20, 10:00 in Peru (UTC-5).
+    const sundayPeru = Date.UTC(2026, 8, 20, 15, 0)
+    const hint = limaTimeHint(sundayPeru)
+    expect(hint).toContain('Hoy es domingo en Perú: no hay reparto en Lima los domingos')
+    expect(hint).toContain('MAÑANA LUNES')
+    expect(hint).toContain('Turno mañana: 10:00 am – 12:00 pm')
+    expect(hint).toContain('Turno tarde: 2:00 pm – 4:00 pm')
+    expect(hint).toContain('Turno noche: 5:00 pm – 8:00 pm')
+  })
 })
