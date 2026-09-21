@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import {
   ArrowLeft,
+  BarChart3,
   Calendar,
   LayoutDashboard,
   LogOut,
@@ -39,6 +40,7 @@ const navItems: NavItem[] = [
   { href: "/studio", label: "Resumen", icon: LayoutDashboard },
   { href: "/studio/calendar", label: "Calendario", icon: Calendar },
   { href: "/studio/ads", label: "Anuncios", icon: Megaphone },
+  { href: "/studio/analyzer", label: "Analizador", icon: BarChart3 },
   { href: "/studio/settings", label: "Conexiones", icon: Settings },
 ];
 

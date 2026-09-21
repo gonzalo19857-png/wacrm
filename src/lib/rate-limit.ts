@@ -191,6 +191,10 @@ export const RATE_LIMITS = {
    *  campaign/adset/ad on the owner's Meta ad account — low limit, no
    *  legitimate reason to hammer this. */
   studioAdsCreate: { limit: 10, windowMs: 60_000 },
+  /** Studio campaign-analyzer insights fetch, per user. Read-only but
+   *  each call hits Meta's Marketing API — bounded well above normal
+   *  dashboard-refresh usage while still capping a runaway poll. */
+  studioAdsInsights: { limit: 20, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

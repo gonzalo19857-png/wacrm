@@ -88,6 +88,63 @@ export async function listAdAccounts(args: {
 }
 
 // ============================================================
+// Insights (campaign-level performance, read-only)
+// ============================================================
+
+export interface CampaignInsight {
+  campaignId: string
+  campaignName: string
+  spend: number
+  impressions: number
+  clicks: number
+  ctr: number
+  cpc: number
+}
+
+/**
+ * Campaign-level performance for the last 30 days. Read-only —
+ * doesn't touch studio_ads; callers merge this with the local rows
+ * by campaignId if they want name/status from our own DB too (Meta's
+ * campaign_name is authoritative on its own).
+ */
+export async function getCampaignInsights(args: {
+  adAccountId: string
+  accessToken: string
+}): Promise<CampaignInsight[]> {
+  const { adAccountId, accessToken } = args
+  const params = new URLSearchParams({
+    level: 'campaign',
+    date_preset: 'last_30d',
+    fields: 'campaign_id,campaign_name,spend,impressions,clicks,ctr,cpc',
+    access_token: accessToken,
+  })
+  const response = await fetch(`${META_API_BASE}/${adAccountId}/insights?${params.toString()}`)
+  if (!response.ok) {
+    await throwMetaError(response, `Meta campaign insights lookup failed: ${response.status}`)
+  }
+  const data = (await response.json()) as {
+    data?: {
+      campaign_id: string
+      campaign_name: string
+      spend?: string
+      impressions?: string
+      clicks?: string
+      ctr?: string
+      cpc?: string
+    }[]
+  }
+  return (data.data ?? []).map((row) => ({
+    campaignId: row.campaign_id,
+    campaignName: row.campaign_name,
+    spend: Number(row.spend ?? 0),
+    impressions: Number(row.impressions ?? 0),
+    clicks: Number(row.clicks ?? 0),
+    ctr: Number(row.ctr ?? 0),
+    cpc: Number(row.cpc ?? 0),
+  }))
+}
+
+// ============================================================
 // Campaign -> Ad Set -> Ad Creative -> Ad
 // ============================================================
 
