@@ -173,6 +173,24 @@ export const RATE_LIMITS = {
    *  capping a stampede; excess inbounds simply don't get an auto-reply
    *  (they still land in the inbox for a human). */
   aiAutoReplyAccount: { limit: 30, windowMs: 60_000 },
+  /** Marketing-team content generation, per user. Same budget as
+   *  `aiDraft` — it's the same BYO key doing the same kind of one-shot
+   *  generation, just for ad/social/campaign copy instead of a WhatsApp
+   *  reply. */
+  aiMarketingTeam: { limit: 20, windowMs: 60_000 },
+  /** Studio's monthly calendar generation, per user. Lower than the
+   *  chat-style limits above — one call proposes an entire month
+   *  (10-16 posts) in one shot, so there's no legitimate reason to
+   *  call this often. */
+  studioCalendarGenerate: { limit: 10, windowMs: 60_000 },
+  /** Studio AI image generation, per user. Each call costs real money
+   *  on the owner's own Gemini key — keep it well below the chat
+   *  limits above. */
+  studioImageGenerate: { limit: 15, windowMs: 60_000 },
+  /** Studio ad creation, per user. Each call creates a real (paused)
+   *  campaign/adset/ad on the owner's Meta ad account — low limit, no
+   *  legitimate reason to hammer this. */
+  studioAdsCreate: { limit: 10, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

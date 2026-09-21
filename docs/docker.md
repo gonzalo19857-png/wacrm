@@ -105,8 +105,14 @@ the README, independent of where the app itself runs.
   unviewable once Meta drops them. Files over 16 MB (the bucket's
   limit) are never copied.
 - Nothing inside the container is scheduled. If you use automation
-  Wait steps or flows, point an external scheduler at
-  `GET /api/automations/cron` and `GET /api/flows/cron` on this
-  deployment, sending the shared secret in the `x-cron-secret` header
-  (`AUTOMATION_CRON_SECRET`, see `.env.local.example`). Both return
-  503 until that variable is set.
+  Wait steps, flows, or Studio's content calendar, point an external
+  scheduler at `GET /api/automations/cron`, `GET /api/flows/cron`, and
+  `GET /api/studio/publish/cron` on this deployment, sending the
+  shared secret in the `x-cron-secret` header (`AUTOMATION_CRON_SECRET`,
+  see `.env.local.example` — Studio reuses the same secret rather than
+  needing its own). All three return 503 until that variable is set.
+  A 15-minute interval is plenty for the content calendar (unlike
+  automation Wait steps, which may want a shorter one):
+  ```
+  */15 * * * * curl -fsS -H "x-cron-secret: $AUTOMATION_CRON_SECRET" https://<your-domain>/api/studio/publish/cron
+  ```

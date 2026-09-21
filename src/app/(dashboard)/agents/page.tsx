@@ -1,15 +1,16 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Bot, Sparkles, Settings2, BarChart3 } from 'lucide-react';
+import { Bot, Sparkles, Settings2, BarChart3, Users } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { AiPlayground } from '@/components/agents/ai-playground';
+import { MarketingTeam } from '@/components/agents/marketing-team';
 import { AiUsageCard } from '@/components/agents/ai-usage';
 import { AiConfig } from '@/components/settings/ai-config';
 import { useAuth } from '@/hooks/use-auth';
 import { canEditSettings } from '@/lib/auth/roles';
 
-type Tab = 'playground' | 'setup' | 'usage';
+type Tab = 'playground' | 'marketing' | 'setup' | 'usage';
 
 export default function AgentsPage() {
   const { accountRole } = useAuth();
@@ -59,6 +60,9 @@ export default function AgentsPage() {
             <TabsTrigger value="playground">
               <Sparkles className="mr-1.5 h-4 w-4" /> Playground
             </TabsTrigger>
+            <TabsTrigger value="marketing">
+              <Users className="mr-1.5 h-4 w-4" /> Equipo de Marketing
+            </TabsTrigger>
             <TabsTrigger value="setup">
               <Settings2 className="mr-1.5 h-4 w-4" /> Setup
             </TabsTrigger>
@@ -71,6 +75,10 @@ export default function AgentsPage() {
 
           <TabsContent value="playground" className="mt-4">
             <AiPlayground onGoToSetup={() => setTab('setup')} />
+          </TabsContent>
+
+          <TabsContent value="marketing" className="mt-4">
+            <MarketingTeam onGoToSetup={() => setTab('setup')} />
           </TabsContent>
 
           <TabsContent value="setup" className="mt-4">
