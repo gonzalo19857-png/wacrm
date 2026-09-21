@@ -2,14 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { decrypt } from '@/lib/whatsapp/encryption'
-import {
-  createAd,
-  createAdCreative,
-  createAdSet,
-  createCampaign,
-  deleteCampaignBestEffort,
-  type AdSetTargeting,
-} from '@/lib/studio/meta-ads'
+import { createAdEndToEnd, type AdSetTargeting } from '@/lib/studio/meta-ads'
 
 const CALL_TO_ACTION_TYPES = new Set([
   'LEARN_MORE',
@@ -63,9 +56,15 @@ export async function POST(request: Request) {
     const gender = body?.gender === 'male' || body?.gender === 'female' ? body.gender : 'all'
     const message = typeof body?.message === 'string' ? body.message.trim() : ''
     const headline = typeof body?.headline === 'string' ? body.headline.trim() : ''
-    const linkUrl = typeof body?.linkUrl === 'string' ? body.linkUrl.trim() : ''
     const imageUrl = typeof body?.imageUrl === 'string' ? body.imageUrl.trim() : ''
-    const callToAction = typeof body?.callToAction === 'string' ? body.callToAction : ''
+    const destinationType = body?.destinationType === 'whatsapp' ? 'whatsapp' : 'link'
+    const linkUrl = typeof body?.linkUrl === 'string' ? body.linkUrl.trim() : ''
+    const callToAction =
+      destinationType === 'whatsapp'
+        ? 'WHATSAPP_MESSAGE'
+        : typeof body?.callToAction === 'string'
+          ? body.callToAction
+          : ''
 
     if (!name) return NextResponse.json({ error: 'name is required.' }, { status: 400 })
     if (!Number.isFinite(dailyBudget) || dailyBudget <= 0) {
@@ -79,15 +78,17 @@ export async function POST(request: Request) {
     }
     if (!message) return NextResponse.json({ error: 'message is required.' }, { status: 400 })
     if (!headline) return NextResponse.json({ error: 'headline is required.' }, { status: 400 })
-    try {
-      new URL(linkUrl)
-    } catch {
-      return NextResponse.json({ error: 'linkUrl must be a valid URL.' }, { status: 400 })
+    if (destinationType === 'link') {
+      try {
+        new URL(linkUrl)
+      } catch {
+        return NextResponse.json({ error: 'linkUrl must be a valid URL.' }, { status: 400 })
+      }
+      if (!CALL_TO_ACTION_TYPES.has(callToAction)) {
+        return NextResponse.json({ error: 'callToAction is not a supported type.' }, { status: 400 })
+      }
     }
     if (!imageUrl) return NextResponse.json({ error: 'imageUrl is required.' }, { status: 400 })
-    if (!CALL_TO_ACTION_TYPES.has(callToAction)) {
-      return NextResponse.json({ error: 'callToAction is not a supported type.' }, { status: 400 })
-    }
 
     const { data: connection, error: connectionError } = await supabase
       .from('studio_meta_connections')
@@ -122,39 +123,21 @@ export async function POST(request: Request) {
       genders: gender === 'male' ? 1 : gender === 'female' ? 2 : undefined,
     }
 
-    let campaignId: string | null = null
     try {
-      const campaign = await createCampaign({ adAccountId, accessToken, name })
-      campaignId = campaign.id
-
-      const adSet = await createAdSet({
-        adAccountId,
-        accessToken,
-        campaignId,
-        name: `${name} — Ad Set`,
-        dailyBudgetMinorUnits,
-        targeting,
-      })
-
-      const creative = await createAdCreative({
+      const created = await createAdEndToEnd({
         adAccountId,
         accessToken,
         pageId: connection.page_id,
         instagramActorId: connection.instagram_business_account_id,
-        name: `${name} — Creative`,
+        name,
+        dailyBudgetMinorUnits,
+        targeting,
         message,
         headline,
-        linkUrl,
         imageUrl,
+        destinationType: destinationType === 'whatsapp' ? 'whatsapp' : undefined,
+        linkUrl: destinationType === 'link' ? linkUrl : undefined,
         callToActionType: callToAction,
-      })
-
-      const ad = await createAd({
-        adAccountId,
-        accessToken,
-        adsetId: adSet.id,
-        creativeId: creative.id,
-        name: `${name} — Ad`,
       })
 
       const { data: row, error: insertError } = await supabase
@@ -170,14 +153,15 @@ export async function POST(request: Request) {
           gender,
           message,
           headline,
-          link_url: linkUrl,
+          link_url: destinationType === 'link' ? linkUrl : null,
           image_url: imageUrl,
           call_to_action: callToAction,
+          destination_type: destinationType,
           status: 'paused',
-          meta_campaign_id: campaignId,
-          meta_adset_id: adSet.id,
-          meta_creative_id: creative.id,
-          meta_ad_id: ad.id,
+          meta_campaign_id: created.campaignId,
+          meta_adset_id: created.adsetId,
+          meta_creative_id: created.creativeId,
+          meta_ad_id: created.adId,
           created_by: userId,
         })
         .select('*')
@@ -186,9 +170,6 @@ export async function POST(request: Request) {
 
       return NextResponse.json({ ad: row })
     } catch (err) {
-      if (campaignId) {
-        await deleteCampaignBestEffort({ adAccountId, accessToken, campaignId })
-      }
       const message = err instanceof Error ? err.message : 'No se pudo crear el anuncio en Meta.'
       return NextResponse.json({ error: message }, { status: 502 })
     }

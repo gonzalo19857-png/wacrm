@@ -47,6 +47,7 @@ interface StudioAd {
   link_url: string;
   image_url: string;
   call_to_action: string;
+  destination_type: 'link' | 'whatsapp';
   status: 'paused' | 'active' | 'error';
   error_detail: string | null;
   created_at: string;
@@ -69,6 +70,7 @@ const STATUS_LABEL: Record<StudioAd['status'], string> = {
 
 function emptyForm() {
   return {
+    destinationType: 'link' as 'link' | 'whatsapp',
     name: '',
     dailyBudget: '',
     country: 'PE',
@@ -119,7 +121,9 @@ export function AdCreator({ currency }: { currency: string }) {
     }
     if (!form.message.trim()) return toast.error('Escribe el texto principal del anuncio.');
     if (!form.headline.trim()) return toast.error('Escribe un titular.');
-    if (!form.linkUrl.trim()) return toast.error('Indica el link de destino (puede ser tu link de WhatsApp).');
+    if (form.destinationType === 'link' && !form.linkUrl.trim()) {
+      return toast.error('Indica el link de destino.');
+    }
     if (!form.imageUrl) return toast.error('Elige una imagen para el anuncio.');
 
     setCreating(true);
@@ -128,6 +132,7 @@ export function AdCreator({ currency }: { currency: string }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          destinationType: form.destinationType,
           name: form.name.trim(),
           dailyBudget,
           country: form.country.toUpperCase(),
@@ -136,9 +141,9 @@ export function AdCreator({ currency }: { currency: string }) {
           gender: form.gender,
           message: form.message.trim(),
           headline: form.headline.trim(),
-          linkUrl: form.linkUrl.trim(),
+          linkUrl: form.destinationType === 'link' ? form.linkUrl.trim() : undefined,
           imageUrl: form.imageUrl,
-          callToAction: form.callToAction,
+          callToAction: form.destinationType === 'link' ? form.callToAction : undefined,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -218,12 +223,14 @@ export function AdCreator({ currency }: { currency: string }) {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-foreground">{ad.name}</p>
                   <p className="truncate text-xs text-muted-foreground">{ad.headline}</p>
-                  <Badge
-                    variant={ad.status === 'active' ? 'default' : ad.status === 'error' ? 'destructive' : 'secondary'}
-                    className="mt-1"
-                  >
-                    {STATUS_LABEL[ad.status]}
-                  </Badge>
+                  <div className="mt-1 flex items-center gap-1.5">
+                    <Badge
+                      variant={ad.status === 'active' ? 'default' : ad.status === 'error' ? 'destructive' : 'secondary'}
+                    >
+                      {STATUS_LABEL[ad.status]}
+                    </Badge>
+                    {ad.destination_type === 'whatsapp' && <Badge variant="outline">WhatsApp</Badge>}
+                  </div>
                 </div>
               </div>
 
@@ -285,6 +292,28 @@ export function AdCreator({ currency }: { currency: string }) {
           </DialogHeader>
 
           <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>Tipo de anuncio</Label>
+              <Select
+                value={form.destinationType}
+                onValueChange={(v) => setForm((f) => ({ ...f, destinationType: v as typeof f.destinationType }))}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="link">Tráfico (link)</SelectItem>
+                  <SelectItem value="whatsapp">WhatsApp (conversación)</SelectItem>
+                </SelectContent>
+              </Select>
+              {form.destinationType === 'whatsapp' && (
+                <p className="text-xs text-muted-foreground">
+                  El botón &ldquo;Enviar WhatsApp&rdquo; abre un chat con el número conectado a tu
+                  Página — no hace falta indicar un link.
+                </p>
+              )}
+            </div>
+
             <div className="space-y-1.5">
               <Label htmlFor="ad-name">Nombre interno</Label>
               <Input
@@ -394,30 +423,32 @@ export function AdCreator({ currency }: { currency: string }) {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="ad-link">Link de destino</Label>
-                <Input
-                  id="ad-link"
-                  value={form.linkUrl}
-                  onChange={(e) => setForm((f) => ({ ...f, linkUrl: e.target.value }))}
-                  placeholder="https://wa.me/51999999999"
-                />
+            {form.destinationType === 'link' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="ad-link">Link de destino</Label>
+                  <Input
+                    id="ad-link"
+                    value={form.linkUrl}
+                    onChange={(e) => setForm((f) => ({ ...f, linkUrl: e.target.value }))}
+                    placeholder="https://wa.me/51999999999"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Botón</Label>
+                  <Select value={form.callToAction} onValueChange={(v) => setForm((f) => ({ ...f, callToAction: v as string }))}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CTA_OPTIONS.map((c) => (
+                        <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <Label>Botón</Label>
-                <Select value={form.callToAction} onValueChange={(v) => setForm((f) => ({ ...f, callToAction: v as string }))}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CTA_OPTIONS.map((c) => (
-                      <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+            )}
           </div>
 
           <DialogFooter>

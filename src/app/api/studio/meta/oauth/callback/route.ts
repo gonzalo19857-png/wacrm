@@ -132,6 +132,12 @@ export async function GET(request: Request) {
     return NextResponse.redirect(settingsUrl({ connected: '1' }))
   } catch (err) {
     console.error('[studio/meta/oauth/callback]', err)
-    return NextResponse.redirect(settingsUrl({ meta_error: 'unexpected' }))
+    const detail =
+      err instanceof Error
+        ? err.message
+        : err && typeof err === 'object' && 'message' in err
+          ? String((err as { message: unknown }).message)
+          : 'unexpected'
+    return NextResponse.redirect(settingsUrl({ meta_error: detail.slice(0, 200) }))
   }
 }

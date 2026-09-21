@@ -145,6 +145,147 @@ export async function getCampaignInsights(args: {
 }
 
 // ============================================================
+// Reading an existing campaign (used as a reference/template for
+// creating new ones — see /api/studio/ads/reference)
+// ============================================================
+
+export interface CampaignSummary {
+  id: string
+  name: string
+  objective: string
+  status: string
+}
+
+export async function listCampaigns(args: {
+  adAccountId: string
+  accessToken: string
+}): Promise<CampaignSummary[]> {
+  const { adAccountId, accessToken } = args
+  const params = new URLSearchParams({
+    fields: 'id,name,objective,status',
+    access_token: accessToken,
+  })
+  const response = await fetch(`${META_API_BASE}/${adAccountId}/campaigns?${params.toString()}`)
+  if (!response.ok) {
+    await throwMetaError(response, `Meta campaigns lookup failed: ${response.status}`)
+  }
+  const data = (await response.json()) as { data?: CampaignSummary[] }
+  return data.data ?? []
+}
+
+export interface CampaignReference {
+  campaign: CampaignSummary
+  adSet: {
+    id: string
+    name: string
+    dailyBudget: number | null
+    optimizationGoal: string | null
+    billingEvent: string | null
+    targeting: unknown
+  } | null
+  creative: {
+    message: string | null
+    headline: string | null
+    linkUrl: string | null
+    imageUrl: string | null
+    callToActionType: string | null
+  } | null
+}
+
+/**
+ * Pulls targeting + creative for a campaign's first ad set/ad — used
+ * to let a new campaign copy what an existing (already-tuned) one is
+ * doing rather than starting from a blank targeting/creative guess.
+ * Read-only; never touches studio_ads or the campaign itself.
+ */
+export async function getCampaignReference(args: {
+  adAccountId: string
+  accessToken: string
+  campaignId: string
+}): Promise<CampaignReference> {
+  const { accessToken, campaignId } = args
+
+  const campaignParams = new URLSearchParams({
+    fields: 'id,name,objective,status',
+    access_token: accessToken,
+  })
+  const campaignRes = await fetch(`${META_API_BASE}/${campaignId}?${campaignParams.toString()}`)
+  if (!campaignRes.ok) {
+    await throwMetaError(campaignRes, `Meta campaign lookup failed: ${campaignRes.status}`)
+  }
+  const campaign = (await campaignRes.json()) as CampaignSummary
+
+  const adSetParams = new URLSearchParams({
+    fields: 'id,name,daily_budget,optimization_goal,billing_event,targeting',
+    access_token: accessToken,
+  })
+  const adSetRes = await fetch(`${META_API_BASE}/${campaignId}/adsets?${adSetParams.toString()}`)
+  if (!adSetRes.ok) {
+    await throwMetaError(adSetRes, `Meta ad sets lookup failed: ${adSetRes.status}`)
+  }
+  const adSetData = (await adSetRes.json()) as {
+    data?: {
+      id: string
+      name: string
+      daily_budget?: string
+      optimization_goal?: string
+      billing_event?: string
+      targeting?: unknown
+    }[]
+  }
+  const adSetRaw = adSetData.data?.[0] ?? null
+  const adSet = adSetRaw
+    ? {
+        id: adSetRaw.id,
+        name: adSetRaw.name,
+        dailyBudget: adSetRaw.daily_budget ? Number(adSetRaw.daily_budget) : null,
+        optimizationGoal: adSetRaw.optimization_goal ?? null,
+        billingEvent: adSetRaw.billing_event ?? null,
+        targeting: adSetRaw.targeting ?? null,
+      }
+    : null
+
+  let creative: CampaignReference['creative'] = null
+  if (adSetRaw) {
+    const adsParams = new URLSearchParams({
+      fields: 'id,creative{id,object_story_spec}',
+      access_token: accessToken,
+    })
+    const adsRes = await fetch(`${META_API_BASE}/${adSetRaw.id}/ads?${adsParams.toString()}`)
+    if (adsRes.ok) {
+      const adsData = (await adsRes.json()) as {
+        data?: {
+          creative?: {
+            id: string
+            object_story_spec?: {
+              link_data?: {
+                message?: string
+                name?: string
+                link?: string
+                picture?: string
+                call_to_action?: { type?: string }
+              }
+            }
+          }
+        }[]
+      }
+      const linkData = adsData.data?.[0]?.creative?.object_story_spec?.link_data
+      if (linkData) {
+        creative = {
+          message: linkData.message ?? null,
+          headline: linkData.name ?? null,
+          linkUrl: linkData.link ?? null,
+          imageUrl: linkData.picture ?? null,
+          callToActionType: linkData.call_to_action?.type ?? null,
+        }
+      }
+    }
+  }
+
+  return { campaign, adSet, creative }
+}
+
+// ============================================================
 // Campaign -> Ad Set -> Ad Creative -> Ad
 // ============================================================
 
@@ -152,15 +293,36 @@ export async function createCampaign(args: {
   adAccountId: string
   accessToken: string
   name: string
+  /** 'OUTCOME_TRAFFIC' (link clicks) unless a Click-to-WhatsApp campaign asks for 'OUTCOME_ENGAGEMENT'. */
+  objective?: string
 }): Promise<{ id: string }> {
-  const { adAccountId, accessToken, name } = args
+  const { adAccountId, accessToken, name, objective } = args
   return metaPost(`/${adAccountId}/campaigns`, accessToken, {
     name,
-    objective: 'OUTCOME_TRAFFIC',
+    objective: objective ?? 'OUTCOME_TRAFFIC',
     status: 'PAUSED',
     special_ad_categories: [],
+    // Every campaign here has exactly one ad set carrying its own
+    // daily_budget (no campaign-level budget), so ad sets never share
+    // a campaign budget — Meta now requires this explicit either way.
+    is_adset_budget_sharing_enabled: false,
   })
 }
+
+/**
+ * Interest targeting copied from the account owner's own proven
+ * Click-to-WhatsApp campaign ("Prueba - Cobertores new") — car/moto
+ * interests, read via getCampaignReference. Reused for every
+ * Click-to-WhatsApp ad this app creates rather than re-guessing an
+ * audience per campaign.
+ */
+const WHATSAPP_AD_INTERESTS = [
+  { id: '6002885312422', name: 'Auto personalizado (vehículo)' },
+  { id: '6003176678152', name: 'Automóviles (vehículos)' },
+  { id: '6003290047925', name: 'Engine tuning' },
+  { id: '6003353550130', name: 'Motocicletas (vehículos)' },
+  { id: '6003644639220', name: 'Tuneado de autos (vehículos)' },
+]
 
 export interface AdSetTargeting {
   countries: string[]
@@ -178,21 +340,43 @@ export async function createAdSet(args: {
   /** Daily budget in the ad account's minor currency unit (e.g. cents). */
   dailyBudgetMinorUnits: number
   targeting: AdSetTargeting
+  /** Page the ad set promotes to — required for the 'whatsapp' destination's promoted_object. */
+  pageId?: string
+  /**
+   * Set for a Click-to-WhatsApp ad set: swaps LINK_CLICKS bidding for
+   * CONVERSATIONS (WhatsApp chats), matching the account's own proven
+   * campaign, and adds the fixed WHATSAPP_AD_INTERESTS audience.
+   */
+  destinationType?: 'whatsapp'
 }): Promise<{ id: string }> {
-  const { adAccountId, accessToken, campaignId, name, dailyBudgetMinorUnits, targeting } = args
+  const {
+    adAccountId,
+    accessToken,
+    campaignId,
+    name,
+    dailyBudgetMinorUnits,
+    targeting,
+    pageId,
+    destinationType,
+  } = args
+  const isWhatsApp = destinationType === 'whatsapp'
   return metaPost(`/${adAccountId}/adsets`, accessToken, {
     name,
     campaign_id: campaignId,
     daily_budget: dailyBudgetMinorUnits,
     billing_event: 'IMPRESSIONS',
-    optimization_goal: 'LINK_CLICKS',
+    optimization_goal: isWhatsApp ? 'CONVERSATIONS' : 'LINK_CLICKS',
     bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
     status: 'PAUSED',
+    ...(isWhatsApp
+      ? { destination_type: 'WHATSAPP', promoted_object: { page_id: pageId } }
+      : {}),
     targeting: {
       geo_locations: { countries: targeting.countries },
       age_min: targeting.ageMin,
       age_max: targeting.ageMax,
       ...(targeting.genders ? { genders: [targeting.genders] } : {}),
+      ...(isWhatsApp ? { flexible_spec: [{ interests: WHATSAPP_AD_INTERESTS }] } : {}),
     },
   })
 }
@@ -205,9 +389,11 @@ export async function createAdCreative(args: {
   name: string
   message: string
   headline: string
-  linkUrl: string
+  /** Ignored for destinationType 'whatsapp' — WhatsApp ads have no destination link. */
+  linkUrl?: string
   imageUrl: string
   callToActionType: string
+  destinationType?: 'whatsapp'
 }): Promise<{ id: string }> {
   const {
     adAccountId,
@@ -220,18 +406,32 @@ export async function createAdCreative(args: {
     linkUrl,
     imageUrl,
     callToActionType,
+    destinationType,
   } = args
+  const isWhatsApp = destinationType === 'whatsapp'
   return metaPost(`/${adAccountId}/adcreatives`, accessToken, {
     name,
     object_story_spec: {
       page_id: pageId,
-      ...(instagramActorId ? { instagram_actor_id: instagramActorId } : {}),
+      // Meta rejects this account's stored Page-linked Instagram id on
+      // a Click-to-WhatsApp creative ("(#100) Param instagram_actor_id
+      // must be a valid Instagram account id") — Instagram placement
+      // isn't essential for a WhatsApp CTA ad, so skip it there rather
+      // than block the whole ad on an Instagram-specific requirement.
+      ...(instagramActorId && !isWhatsApp ? { instagram_actor_id: instagramActorId } : {}),
       link_data: {
         message,
         name: headline,
-        link: linkUrl,
         picture: imageUrl,
-        call_to_action: { type: callToActionType, value: { link: linkUrl } },
+        // link_data requires a `link` regardless of CTA type — for
+        // WhatsApp ads this is the same fixed placeholder Meta itself
+        // uses (confirmed by inspecting the account's own working
+        // Click-to-WhatsApp ad); the CTA's app_destination is what
+        // actually routes the click to WhatsApp, not this URL.
+        link: isWhatsApp ? 'https://api.whatsapp.com/send' : linkUrl,
+        ...(isWhatsApp
+          ? { call_to_action: { type: 'WHATSAPP_MESSAGE', value: { app_destination: 'WHATSAPP' } } }
+          : { call_to_action: { type: callToActionType, value: { link: linkUrl } } }),
       },
     },
   })
@@ -272,6 +472,101 @@ export async function deleteCampaignBestEffort(args: {
     })
   } catch {
     // best effort — nothing more to do
+  }
+}
+
+export interface CreateAdEndToEndArgs {
+  adAccountId: string
+  accessToken: string
+  pageId: string
+  instagramActorId?: string | null
+  name: string
+  dailyBudgetMinorUnits: number
+  targeting: AdSetTargeting
+  message: string
+  headline: string
+  imageUrl: string
+  /** 'link' (default): traffic ad to linkUrl/callToActionType. 'whatsapp': Click-to-WhatsApp, no link needed. */
+  destinationType?: 'whatsapp'
+  linkUrl?: string
+  callToActionType?: string
+}
+
+/**
+ * The full campaign -> ad set -> ad creative -> ad sequence, with
+ * best-effort cleanup if a later step fails. Shared by the manual
+ * creator (POST /api/studio/ads) and the AI advisor's bulk generator
+ * (POST /api/studio/ads/generate) so the rollback behavior only lives
+ * in one place.
+ */
+export async function createAdEndToEnd(
+  args: CreateAdEndToEndArgs,
+): Promise<{ campaignId: string; adsetId: string; creativeId: string; adId: string }> {
+  const {
+    adAccountId,
+    accessToken,
+    pageId,
+    instagramActorId,
+    name,
+    dailyBudgetMinorUnits,
+    targeting,
+    message,
+    headline,
+    imageUrl,
+    destinationType,
+    linkUrl,
+    callToActionType,
+  } = args
+
+  let campaignId: string | null = null
+  try {
+    const campaign = await createCampaign({
+      adAccountId,
+      accessToken,
+      name,
+      objective: destinationType === 'whatsapp' ? 'OUTCOME_ENGAGEMENT' : 'OUTCOME_TRAFFIC',
+    })
+    campaignId = campaign.id
+
+    const adSet = await createAdSet({
+      adAccountId,
+      accessToken,
+      campaignId,
+      name: `${name} — Ad Set`,
+      dailyBudgetMinorUnits,
+      targeting,
+      pageId,
+      destinationType,
+    })
+
+    const creative = await createAdCreative({
+      adAccountId,
+      accessToken,
+      pageId,
+      instagramActorId,
+      name: `${name} — Creative`,
+      message,
+      headline,
+      linkUrl,
+      imageUrl,
+      callToActionType: callToActionType ?? 'LEARN_MORE',
+      destinationType,
+    })
+
+    const ad = await createAd({
+      adAccountId,
+      accessToken,
+      adsetId: adSet.id,
+      creativeId: creative.id,
+      name: `${name} — Ad`,
+    })
+
+    return { campaignId, adsetId: adSet.id, creativeId: creative.id, adId: ad.id }
+  } catch (err) {
+    if (campaignId) {
+      await deleteCampaignBestEffort({ adAccountId, accessToken, campaignId })
+    }
+    throw err
   }
 }
 
