@@ -153,6 +153,47 @@ export async function getCampaignInsights(args: {
   }))
 }
 
+export interface DailySpend {
+  date: string // YYYY-MM-DD
+  spend: number
+  clicks: number
+}
+
+/**
+ * Account-wide spend broken down one row per day — for a bookkeeping
+ * log ("how much did I pay Meta each day"), not per-campaign detail.
+ * Read-only, on-demand (no polling): each call is one Graph API
+ * request, same as any other insights lookup here — nothing here
+ * spends money or budget, it only reads what already happened.
+ */
+export async function getDailySpend(args: {
+  adAccountId: string
+  accessToken: string
+  since: string // YYYY-MM-DD
+  until: string // YYYY-MM-DD
+}): Promise<DailySpend[]> {
+  const { adAccountId, accessToken, since, until } = args
+  const params = new URLSearchParams({
+    level: 'account',
+    time_increment: '1',
+    time_range: JSON.stringify({ since, until }),
+    fields: 'spend,clicks',
+    access_token: accessToken,
+  })
+  const response = await fetch(`${META_API_BASE}/${adAccountId}/insights?${params.toString()}`)
+  if (!response.ok) {
+    await throwMetaError(response, `Meta daily spend lookup failed: ${response.status}`)
+  }
+  const data = (await response.json()) as {
+    data?: { date_start: string; spend?: string; clicks?: string }[]
+  }
+  return (data.data ?? []).map((row) => ({
+    date: row.date_start,
+    spend: Number(row.spend ?? 0),
+    clicks: Number(row.clicks ?? 0),
+  }))
+}
+
 // ============================================================
 // Reading an existing campaign (used as a reference/template for
 // creating new ones — see /api/studio/ads/reference)

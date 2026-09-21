@@ -8,10 +8,12 @@ import { toast } from 'sonner';
 import {
   ArrowRight,
   BarChart3,
+  CalendarClock,
   Link2,
   Loader2,
   MousePointerClick,
   Radio,
+  RefreshCw,
   RotateCcw,
   Send,
   Sparkles,
@@ -19,6 +21,8 @@ import {
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Table,
   TableBody,
@@ -224,6 +228,120 @@ function MetaAdsSection() {
                   </TableCell>
                 </TableRow>
               ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function toDateInput(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function defaultSince(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 6);
+  return toDateInput(d);
+}
+
+function defaultUntil(): string {
+  return toDateInput(new Date());
+}
+
+interface DailySpendRow {
+  date: string;
+  spend: number;
+  clicks: number;
+}
+
+function DailySpendSection() {
+  const [since, setSince] = useState(defaultSince());
+  const [until, setUntil] = useState(defaultUntil());
+  const [days, setDays] = useState<DailySpendRow[] | null>(null);
+  const [currency, setCurrency] = useState('USD');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/studio/ads/daily-spend?since=${since}&until=${until}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data?.error || 'No se pudo cargar el gasto diario.');
+        return;
+      }
+      setDays(data.days ?? []);
+      setCurrency(data.currency ?? 'USD');
+    } catch {
+      setError('No se pudo cargar el gasto diario.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const total = (days ?? []).reduce((sum, d) => sum + d.spend, 0);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="daily-since" className="text-xs">Desde</Label>
+          <Input id="daily-since" type="date" value={since} onChange={(e) => setSince(e.target.value)} className="w-40" />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="daily-until" className="text-xs">Hasta</Label>
+          <Input id="daily-until" type="date" value={until} onChange={(e) => setUntil(e.target.value)} className="w-40" />
+        </div>
+        <Button size="sm" onClick={load} disabled={loading}>
+          {loading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
+          Actualizar
+        </Button>
+      </div>
+
+      {error && <p className="text-sm text-red-400">{error}</p>}
+
+      {days === null ? (
+        <div className="flex h-24 flex-col items-center justify-center gap-1 rounded-xl border border-border bg-card text-center">
+          <CalendarClock className="h-5 w-5 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">
+            Elegí un rango y tocá &ldquo;Actualizar&rdquo; para traer el gasto real de Meta.
+          </p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-border bg-card">
+          <Table>
+            <TableHeader>
+              <TableRow className="border-border hover:bg-transparent">
+                <TableHead className="text-muted-foreground">Fecha</TableHead>
+                <TableHead className="text-right text-muted-foreground">Gasto</TableHead>
+                <TableHead className="text-right text-muted-foreground">Clics</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {days.map((d) => (
+                <TableRow key={d.date} className="border-border">
+                  <TableCell className="text-foreground">{d.date}</TableCell>
+                  <TableCell className="text-right text-muted-foreground tabular-nums">
+                    {d.spend.toFixed(2)} {currency}
+                  </TableCell>
+                  <TableCell className="text-right text-muted-foreground tabular-nums">
+                    {d.clicks.toLocaleString()}
+                  </TableCell>
+                </TableRow>
+              ))}
+              <TableRow className="border-border font-medium">
+                <TableCell className="text-foreground">Total</TableCell>
+                <TableCell className="text-right text-foreground tabular-nums">
+                  {total.toFixed(2)} {currency}
+                </TableCell>
+                <TableCell className="text-right text-foreground tabular-nums">
+                  {days.reduce((sum, d) => sum + d.clicks, 0).toLocaleString()}
+                </TableCell>
+              </TableRow>
             </TableBody>
           </Table>
         </div>
@@ -593,6 +711,15 @@ export default function StudioAnalyzerPage() {
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-foreground">Anuncios (Meta Ads)</h2>
         <MetaAdsSection />
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-foreground">Gasto diario (Meta Ads)</h2>
+        <p className="-mt-1 text-xs text-muted-foreground">
+          Solo lectura — consultar esto no gasta presupuesto ni cuesta nada, se actualiza cuando
+          vos lo pedís.
+        </p>
+        <DailySpendSection />
       </section>
 
       <section className="space-y-3">
