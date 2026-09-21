@@ -195,6 +195,10 @@ export const RATE_LIMITS = {
    *  each call hits Meta's Marketing API — bounded well above normal
    *  dashboard-refresh usage while still capping a runaway poll. */
   studioAdsInsights: { limit: 20, windowMs: 60_000 },
+  /** Ads advisor bulk campaign creation, per user. Each call can
+   *  create up to 10 real (paused) campaigns on Meta — low limit, no
+   *  legitimate reason to hammer this. */
+  studioAdsAdvisorGenerate: { limit: 5, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

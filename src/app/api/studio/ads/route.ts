@@ -170,7 +170,12 @@ export async function POST(request: Request) {
 
       return NextResponse.json({ ad: row })
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'No se pudo crear el anuncio en Meta.'
+      const message =
+        err instanceof Error
+          ? err.message
+          : err && typeof err === 'object' && 'message' in err
+            ? String((err as { message: unknown }).message)
+            : 'No se pudo crear el anuncio en Meta.'
       return NextResponse.json({ error: message }, { status: 502 })
     }
   } catch (err) {

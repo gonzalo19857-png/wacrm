@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { Broadcast } from '@/types';
+import { toast } from 'sonner';
 import {
   ArrowRight,
   BarChart3,
@@ -11,7 +12,9 @@ import {
   Loader2,
   MousePointerClick,
   Radio,
+  RotateCcw,
   Send,
+  Sparkles,
   Wallet,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
@@ -25,6 +28,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { getBroadcastStatus } from '@/lib/broadcast-status';
+import { MediaPicker } from '@/components/studio/media-picker';
 
 const STATUS_LABELS_ES: Record<string, string> = {
   draft: 'borrador',
@@ -353,6 +357,228 @@ function WhatsAppSection() {
   );
 }
 
+interface Turn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+interface CreatedCampaign {
+  id: string;
+  name: string;
+  daily_budget: number;
+  currency: string;
+}
+
+function AdvisorSection() {
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [input, setInput] = useState('');
+  const [sending, setSending] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [result, setResult] = useState<{ created: CreatedCampaign[]; failed: { name: string; error: string }[] } | null>(
+    null,
+  );
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+  }, [turns, sending]);
+
+  const send = async () => {
+    const text = input.trim();
+    if (!text || sending) return;
+    const next: Turn[] = [...turns, { role: 'user', content: text }];
+    setTurns(next);
+    setInput('');
+    setSending(true);
+    try {
+      const res = await fetch('/api/studio/ads/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: next }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (data.code === 'ai_not_configured') {
+          toast.error('No hay agente de IA configurado — ve a AI Agents → Setup.');
+        } else {
+          toast.error(data.error ?? 'No se pudo contactar al asesor.');
+        }
+        setTurns(turns);
+        setInput(text);
+        return;
+      }
+      setTurns([...next, { role: 'assistant', content: data.reply ?? '' }]);
+    } catch {
+      toast.error('No se pudo contactar al asesor.');
+      setTurns(turns);
+      setInput(text);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      void send();
+    }
+  };
+
+  const generate = async () => {
+    if (!imageUrl) {
+      setPickerOpen(true);
+      return;
+    }
+    setGenerating(true);
+    try {
+      const res = await fetch('/api/studio/ads/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: turns, imageUrl }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (data.code === 'ai_not_configured') {
+          toast.error('No hay agente de IA configurado — ve a AI Agents → Setup.');
+        } else if (data.code === 'ad_account_not_connected') {
+          toast.error('No hay una cuenta publicitaria conectada.');
+        } else {
+          toast.error(data.error ?? 'No se pudieron crear las campañas.');
+        }
+        return;
+      }
+      setResult({ created: data.created ?? [], failed: data.failed ?? [] });
+      toast.success(`Se crearon ${data.created?.length ?? 0} campañas (pausadas).`);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <Card className="flex h-[420px] flex-col p-0">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <span className="text-sm font-medium text-foreground">Asesor de Anuncios</span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setTurns([]);
+                setResult(null);
+              }}
+              disabled={turns.length === 0 || sending}
+              className="text-muted-foreground"
+            >
+              <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Reiniciar
+            </Button>
+            <Button size="sm" onClick={generate} disabled={generating || turns.length === 0}>
+              {generating ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              {imageUrl ? 'Crear campañas' : 'Elegir imagen y crear'}
+            </Button>
+          </div>
+        </div>
+
+        <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4">
+          {turns.length === 0 && (
+            <div className="flex h-full flex-col items-center justify-center text-center text-sm text-muted-foreground">
+              <p>Contale al asesor qué campañas querés armar.</p>
+              <p className="mt-1 text-xs">
+                Ve tu rendimiento real de Meta Ads y tu catálogo — te va a preguntar lo que
+                falte, y cuando estés listo apretás &ldquo;Crear campañas&rdquo;.
+              </p>
+            </div>
+          )}
+          {turns.map((t, i) => (
+            <div key={i} className={t.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
+              <div
+                className={
+                  t.role === 'user'
+                    ? 'max-w-[80%] rounded-2xl rounded-br-sm bg-primary px-3.5 py-2 text-sm text-primary-foreground'
+                    : 'max-w-[80%] rounded-2xl rounded-bl-sm bg-muted px-3.5 py-2 text-sm text-foreground'
+                }
+              >
+                <p className="whitespace-pre-wrap">{t.content}</p>
+              </div>
+            </div>
+          ))}
+          {sending && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Pensando…
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-end gap-2 border-t border-border p-3">
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Escribí acá…"
+            rows={1}
+            className="max-h-32 flex-1 resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+          />
+          <Button size="icon" onClick={send} disabled={sending || !input.trim()}>
+            <Send className="h-4 w-4" />
+          </Button>
+        </div>
+      </Card>
+
+      {imageUrl && (
+        <p className="text-xs text-muted-foreground">
+          Imagen elegida para las campañas —{' '}
+          <button className="underline" onClick={() => setPickerOpen(true)}>
+            cambiar
+          </button>
+        </p>
+      )}
+
+      {result && (
+        <Card className="p-4">
+          <p className="text-sm font-medium text-foreground">
+            {result.created.length} campañas creadas (pausadas)
+          </p>
+          {result.created.length > 0 && (
+            <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+              {result.created.map((c) => (
+                <li key={c.id}>
+                  {c.name} — {c.currency} {Number(c.daily_budget).toFixed(2)}/día
+                </li>
+              ))}
+            </ul>
+          )}
+          {result.failed.length > 0 && (
+            <div className="mt-3 space-y-1 text-sm text-red-400">
+              {result.failed.map((f, i) => (
+                <p key={i}>
+                  {f.name}: {f.error}
+                </p>
+              ))}
+            </div>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-3"
+            nativeButton={false}
+            render={<Link href="/studio/ads" />}
+          >
+            Ir a Anuncios para activarlas <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+          </Button>
+        </Card>
+      )}
+
+      <MediaPicker open={pickerOpen} onOpenChange={setPickerOpen} onPick={(media) => setImageUrl(media.url)} />
+    </div>
+  );
+}
+
 export default function StudioAnalyzerPage() {
   return (
     <div className="space-y-8">
@@ -372,6 +598,11 @@ export default function StudioAnalyzerPage() {
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-foreground">WhatsApp (Broadcasts)</h2>
         <WhatsAppSection />
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-foreground">Asesor de Anuncios</h2>
+        <AdvisorSection />
       </section>
     </div>
   );
