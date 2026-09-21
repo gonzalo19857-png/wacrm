@@ -448,6 +448,15 @@ export async function createAdSet(args: {
    * campaign, and adds the fixed WHATSAPP_AD_INTERESTS audience.
    */
   destinationType?: 'whatsapp'
+  /**
+   * Explicit destination number for a 'whatsapp' ad set, digits only
+   * with country code (e.g. "51936153663", no "+"). Without this,
+   * Meta falls back to whatever WhatsApp account it considers the
+   * Page's default — which can silently resolve to an unrelated
+   * account (e.g. a leftover "Test WhatsApp Business Account") if the
+   * Business has more than one. Pin it explicitly to avoid that.
+   */
+  whatsappPhoneNumber?: string
 }): Promise<{ id: string }> {
   const {
     adAccountId,
@@ -458,6 +467,7 @@ export async function createAdSet(args: {
     targeting,
     pageId,
     destinationType,
+    whatsappPhoneNumber,
   } = args
   const isWhatsApp = destinationType === 'whatsapp'
   return metaPost(`/${adAccountId}/adsets`, accessToken, {
@@ -469,7 +479,13 @@ export async function createAdSet(args: {
     bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
     status: 'PAUSED',
     ...(isWhatsApp
-      ? { destination_type: 'WHATSAPP', promoted_object: { page_id: pageId } }
+      ? {
+          destination_type: 'WHATSAPP',
+          promoted_object: {
+            page_id: pageId,
+            ...(whatsappPhoneNumber ? { whatsapp_phone_number: whatsappPhoneNumber } : {}),
+          },
+        }
       : {}),
     targeting: {
       geo_locations:
@@ -628,6 +644,8 @@ export interface CreateAdEndToEndArgs {
   destinationType?: 'whatsapp'
   linkUrl?: string
   callToActionType?: string
+  /** Explicit destination number for 'whatsapp' — see createAdSet. */
+  whatsappPhoneNumber?: string
   /** Reuse an existing video instead of imageUrl — see createAdCreative. */
   video?: {
     videoId: string
@@ -661,6 +679,7 @@ export async function createAdEndToEnd(
     destinationType,
     linkUrl,
     callToActionType,
+    whatsappPhoneNumber,
     video,
   } = args
 
@@ -683,6 +702,7 @@ export async function createAdEndToEnd(
       targeting,
       pageId,
       destinationType,
+      whatsappPhoneNumber,
     })
 
     const creative = await createAdCreative({

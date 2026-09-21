@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { verifyPhoneNumber } from '@/lib/whatsapp/meta-api'
 import { createAdEndToEnd, type AdSetTargeting } from '@/lib/studio/meta-ads'
 
 const CALL_TO_ACTION_TYPES = new Set([
@@ -123,6 +124,29 @@ export async function POST(request: Request) {
       genders: gender === 'male' ? 1 : gender === 'female' ? 2 : undefined,
     }
 
+    // Pin Click-to-WhatsApp destination to this account's real WhatsApp
+    // Cloud API number — see the same comment in
+    // /api/studio/ads/generate/route.ts for why this matters.
+    let whatsappPhoneNumber: string | undefined
+    if (destinationType === 'whatsapp') {
+      try {
+        const { data: waConfig } = await supabase
+          .from('whatsapp_config')
+          .select('phone_number_id, access_token')
+          .eq('account_id', accountId)
+          .maybeSingle()
+        if (waConfig) {
+          const info = await verifyPhoneNumber({
+            phoneNumberId: waConfig.phone_number_id,
+            accessToken: decrypt(waConfig.access_token),
+          })
+          whatsappPhoneNumber = info.display_phone_number.replace(/[^0-9]/g, '')
+        }
+      } catch (err) {
+        console.error('[studio/ads] whatsapp phone number lookup failed (continuing without it):', err)
+      }
+    }
+
     try {
       const created = await createAdEndToEnd({
         adAccountId,
@@ -138,6 +162,7 @@ export async function POST(request: Request) {
         destinationType: destinationType === 'whatsapp' ? 'whatsapp' : undefined,
         linkUrl: destinationType === 'link' ? linkUrl : undefined,
         callToActionType: callToAction,
+        whatsappPhoneNumber,
       })
 
       const { data: row, error: insertError } = await supabase

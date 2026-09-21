@@ -8,6 +8,7 @@ import { serializeConversationAsNotes } from '@/lib/ai/studio-calendar-agent'
 import { buildAdsGeneratorSystemPrompt, parseAdsGeneration } from '@/lib/ai/studio-ads-agent'
 import { AiError, type ChatMessage } from '@/lib/ai/types'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { verifyPhoneNumber } from '@/lib/whatsapp/meta-api'
 import { createAdEndToEnd, searchCity, type AdSetTargeting } from '@/lib/studio/meta-ads'
 
 interface PlanItem {
@@ -83,6 +84,31 @@ export async function POST(request: Request) {
     const accessToken = decrypt(connection.long_lived_user_token)
     const adAccountId = connection.ad_account_id as string
     const currency = connection.ad_account_currency ?? 'USD'
+
+    // Pin the Click-to-WhatsApp destination to this account's actual
+    // WhatsApp Cloud API number — without it Meta falls back to
+    // whichever WhatsApp account it considers the Page's default,
+    // which can silently resolve to an unrelated one (e.g. a leftover
+    // "Test WhatsApp Business Account") if the Business has more than
+    // one connected. Best-effort: campaigns still get created (via
+    // Meta's own default) if this lookup fails, just without the pin.
+    let whatsappPhoneNumber: string | undefined
+    try {
+      const { data: waConfig } = await supabase
+        .from('whatsapp_config')
+        .select('phone_number_id, access_token')
+        .eq('account_id', accountId)
+        .maybeSingle()
+      if (waConfig) {
+        const info = await verifyPhoneNumber({
+          phoneNumberId: waConfig.phone_number_id,
+          accessToken: decrypt(waConfig.access_token),
+        })
+        whatsappPhoneNumber = info.display_phone_number.replace(/[^0-9]/g, '')
+      }
+    } catch (err) {
+      console.error('[studio/ads/generate] whatsapp phone number lookup failed (continuing without it):', err)
+    }
 
     let plan: PlanItem[]
 
@@ -203,6 +229,7 @@ export async function POST(request: Request) {
           headline: item.headline,
           imageUrl,
           destinationType: 'whatsapp',
+          whatsappPhoneNumber,
           video,
         })
 

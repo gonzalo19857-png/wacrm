@@ -170,6 +170,31 @@ export async function getPageInstagramAccount(args: {
 }
 
 /**
+ * The WhatsApp number Meta actually routes Click-to-WhatsApp ad clicks
+ * to — this is the Page's own WhatsApp connection (set in Meta
+ * Business Suite), which is NOT necessarily the same number this app's
+ * WhatsApp Cloud API config sends/receives CRM messages on. Read-only;
+ * used to let the owner verify the two match. `null` when the Page has
+ * no WhatsApp number connected.
+ */
+export async function getPageWhatsAppNumber(args: {
+  pageId: string
+  pageAccessToken: string
+}): Promise<string | null> {
+  const { pageId, pageAccessToken } = args
+  const params = new URLSearchParams({
+    fields: 'whatsapp_number',
+    access_token: pageAccessToken,
+  })
+  const response = await fetch(`${META_API_BASE}/${pageId}?${params.toString()}`)
+  if (!response.ok) {
+    await throwMetaError(response, `Meta Page WhatsApp number lookup failed: ${response.status}`)
+  }
+  const data = (await response.json()) as { whatsapp_number?: string }
+  return data.whatsapp_number ?? null
+}
+
+/**
  * Subscribe the Page to `messages` webhook events — required once per
  * Page for Meta to start forwarding Messenger/Marketplace buyer
  * messages to our webhook (src/app/api/messenger/webhook). Idempotent:
