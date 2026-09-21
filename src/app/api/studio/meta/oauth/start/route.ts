@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { buildOAuthState } from '@/lib/studio/oauth-state'
+import { getMetaAppId } from '@/lib/meta-app-id'
 
 /**
  * GET /api/studio/meta/oauth/start  (admin+)
@@ -13,14 +14,8 @@ export async function GET() {
   try {
     const { accountId } = await requireRole('admin')
 
-    const appId = process.env.META_APP_ID
+    const appId = getMetaAppId()
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/+$/, '')
-    if (!appId) {
-      return NextResponse.json(
-        { error: 'META_APP_ID is not configured on the server.' },
-        { status: 500 },
-      )
-    }
     if (!siteUrl) {
       return NextResponse.json(
         { error: 'NEXT_PUBLIC_SITE_URL is not configured on the server.' },

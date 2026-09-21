@@ -1,6 +1,7 @@
 import { uploadResumableMedia } from '@/lib/whatsapp/meta-api'
 import type { TemplatePayload } from '@/lib/whatsapp/template-validators'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
+import { getMetaAppId } from '@/lib/meta-app-id'
 
 /**
  * Meta requires an `example.header_handle` (from the Resumable Upload
@@ -27,12 +28,7 @@ export async function ensureImageHeaderHandle(
   if (payload.header_handle) return // already have one
   if (!payload.header_media_url) return // validator already requires url-or-handle
 
-  const appId = process.env.META_APP_ID
-  if (!appId) {
-    throw new Error(
-      'Image-header templates need META_APP_ID set (used for Meta’s Resumable Upload). Add it to your environment, or remove the image header.',
-    )
-  }
+  const appId = getMetaAppId()
 
   // SSRF guard: `header_media_url` is caller-supplied (any authenticated
   // member can submit a template) and the fetch below happens server-side,

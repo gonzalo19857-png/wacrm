@@ -11,6 +11,7 @@ import {
   subscribePageToMessaging,
 } from '@/lib/studio/meta-graph'
 import { listAdAccounts } from '@/lib/studio/meta-ads'
+import { getMetaAppId } from '@/lib/meta-app-id'
 
 /**
  * GET /api/studio/meta/oauth/callback  (admin+)
@@ -47,9 +48,9 @@ export async function GET(request: Request) {
       return NextResponse.redirect(settingsUrl({ meta_error: 'missing_code' }))
     }
 
-    const appId = process.env.META_APP_ID
+    const appId = getMetaAppId()
     const appSecret = process.env.META_APP_SECRET
-    if (!appId || !appSecret || !siteUrl) {
+    if (!appSecret || !siteUrl) {
       return NextResponse.json(
         { error: 'Meta OAuth is not fully configured on the server.' },
         { status: 500 },
