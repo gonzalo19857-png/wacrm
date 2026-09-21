@@ -18,6 +18,7 @@ import {
   Radio,
   Settings,
   Shield,
+  Sparkles,
   User,
   UserCog,
   Users,
@@ -99,6 +100,7 @@ const navItems: NavItem[] = [
   { href: "/automations", labelKey: "automations", icon: Zap },
   { href: "/flows", labelKey: "flows", icon: Workflow, beta: true },
   { href: "/agents", labelKey: "aiAgents", icon: Bot },
+  { href: "/studio", labelKey: "studio", icon: Sparkles },
 ];
 
 const bottomNavItems = [
