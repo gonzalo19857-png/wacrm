@@ -14,9 +14,9 @@ export function buildAdsAdvisorPlannerSystemPrompt(args: {
   businessContext: string | null
   products: CatalogProduct[]
   campaignInsights: CampaignInsight[] | null
-  referenceCampaign: CampaignReference | null
+  referenceCampaigns: CampaignReference[]
 }): string {
-  const { businessContext, products, campaignInsights, referenceCampaign } = args
+  const { businessContext, products, campaignInsights, referenceCampaigns } = args
   const parts: string[] = [
     'You are the in-house Meta Ads advisor for this business, having a planning conversation with the owner about new Click-to-WhatsApp ad campaigns (a native "Send WhatsApp" button ad, not a link-click ad). ' +
       'This is a conversation, not the final deliverable — help them decide, campaign by campaign, what angle/location/product to feature and what daily budget to use. Ask a short clarifying question when something material is missing (which product/zone to feature, budget), but don\'t interrogate — keep it light and move the planning forward. ' +
@@ -26,15 +26,22 @@ export function buildAdsAdvisorPlannerSystemPrompt(args: {
     'Never invent sales/performance data not given to you below. If the owner mentions a zone or fact from their own memory/experience (e.g. "La Victoria sells more"), treat it as their input, not something you verified.',
   ]
 
-  if (referenceCampaign) {
-    const targetingNote = referenceCampaign.adSet?.targeting
-      ? JSON.stringify(referenceCampaign.adSet.targeting)
-      : 'no disponible'
+  if (referenceCampaigns.length > 0) {
+    const list = referenceCampaigns
+      .map((ref) => {
+        const targetingNote = ref.adSet?.targeting ? JSON.stringify(ref.adSet.targeting) : 'no disponible'
+        const creativeNote = ref.creative
+          ? `headline "${ref.creative.headline ?? ''}", texto: ${ref.creative.message ?? '(no disponible)'}`
+          : 'no disponible (probablemente un anuncio de video, el detalle de creatividad no se pudo leer)'
+        return (
+          `- ${ref.campaign.name} (status: ${ref.campaign.status}, objetivo: ${ref.campaign.objective}, optimización: ${ref.adSet?.optimizationGoal ?? 'n/a'})\n` +
+          `  Targeting: ${targetingNote}\n` +
+          `  Creativo: ${creativeNote}`
+        )
+      })
+      .join('\n')
     parts.push(
-      `The account's own real, currently-running campaign (use this as the proven reference for targeting/tone):\n` +
-        `- Name: ${referenceCampaign.campaign.name} (status: ${referenceCampaign.campaign.status})\n` +
-        `- Ad set optimization goal: ${referenceCampaign.adSet?.optimizationGoal ?? 'n/a'}\n` +
-        `- Targeting: ${targetingNote}`,
+      `The account's own real, currently-ACTIVE campaigns (use these as proven reference for targeting/tone — the owner can ask about any of them specifically):\n${list}`,
     )
   }
 

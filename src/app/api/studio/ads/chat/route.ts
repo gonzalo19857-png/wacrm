@@ -83,7 +83,7 @@ export async function POST(request: Request) {
     // (just without campaign-specific context) if Meta isn't connected
     // or a lookup fails, rather than blocking the whole conversation.
     let campaignInsights = null
-    let referenceCampaign = null
+    let referenceCampaigns: Awaited<ReturnType<typeof getCampaignReference>>[] = []
     try {
       const { data: connection } = await supabase
         .from('studio_meta_connections')
@@ -95,10 +95,14 @@ export async function POST(request: Request) {
         const adAccountId = connection.ad_account_id as string
         campaignInsights = await getCampaignInsights({ adAccountId, accessToken })
         const campaigns = await listCampaigns({ adAccountId, accessToken })
-        const target = campaigns.find((c) => c.status === 'ACTIVE') ?? campaigns[0]
-        if (target) {
-          referenceCampaign = await getCampaignReference({ adAccountId, accessToken, campaignId: target.id })
-        }
+        // Full targeting/creative detail for every ACTIVE campaign (capped —
+        // each one is a couple more Graph API calls), not just one, so the
+        // owner can ask the advisor about any of their running campaigns.
+        const active = campaigns.filter((c) => c.status === 'ACTIVE').slice(0, 10)
+        const targets = active.length > 0 ? active : campaigns.slice(0, 1)
+        referenceCampaigns = await Promise.all(
+          targets.map((c) => getCampaignReference({ adAccountId, accessToken, campaignId: c.id })),
+        )
       }
     } catch (err) {
       console.error('[studio/ads/chat] Meta grounding lookup failed (continuing without it):', err)
@@ -108,7 +112,7 @@ export async function POST(request: Request) {
       businessContext: config.systemPrompt,
       products,
       campaignInsights,
-      referenceCampaign,
+      referenceCampaigns,
     })
 
     const { text } = await generateReply({ config, systemPrompt, messages })
