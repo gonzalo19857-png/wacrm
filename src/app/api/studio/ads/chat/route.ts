@@ -83,6 +83,7 @@ export async function POST(request: Request) {
     // (just without campaign-specific context) if Meta isn't connected
     // or a lookup fails, rather than blocking the whole conversation.
     let campaignInsights = null
+    let todayInsights = null
     let referenceCampaigns: Awaited<ReturnType<typeof getCampaignReference>>[] = []
     try {
       const { data: connection } = await supabase
@@ -93,7 +94,10 @@ export async function POST(request: Request) {
       if (connection?.ad_account_id) {
         const accessToken = decrypt(connection.long_lived_user_token)
         const adAccountId = connection.ad_account_id as string
-        campaignInsights = await getCampaignInsights({ adAccountId, accessToken })
+        ;[campaignInsights, todayInsights] = await Promise.all([
+          getCampaignInsights({ adAccountId, accessToken }),
+          getCampaignInsights({ adAccountId, accessToken, datePreset: 'today' }),
+        ])
         const campaigns = await listCampaigns({ adAccountId, accessToken })
         // Full targeting/creative detail for every ACTIVE campaign (capped —
         // each one is a couple more Graph API calls), not just one, so the
@@ -112,6 +116,7 @@ export async function POST(request: Request) {
       businessContext: config.systemPrompt,
       products,
       campaignInsights,
+      todayInsights,
       referenceCampaigns,
     })
 

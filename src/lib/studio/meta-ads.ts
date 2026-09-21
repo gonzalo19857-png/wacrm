@@ -102,19 +102,22 @@ export interface CampaignInsight {
 }
 
 /**
- * Campaign-level performance for the last 30 days. Read-only —
- * doesn't touch studio_ads; callers merge this with the local rows
- * by campaignId if they want name/status from our own DB too (Meta's
- * campaign_name is authoritative on its own).
+ * Campaign-level performance for the given Meta `date_preset` (default
+ * 'last_30d' — pass 'today' for the owner's current-day spend, in the
+ * ad account's own timezone). Read-only — doesn't touch studio_ads;
+ * callers merge this with the local rows by campaignId if they want
+ * name/status from our own DB too (Meta's campaign_name is
+ * authoritative on its own).
  */
 export async function getCampaignInsights(args: {
   adAccountId: string
   accessToken: string
+  datePreset?: string
 }): Promise<CampaignInsight[]> {
-  const { adAccountId, accessToken } = args
+  const { adAccountId, accessToken, datePreset } = args
   const params = new URLSearchParams({
     level: 'campaign',
-    date_preset: 'last_30d',
+    date_preset: datePreset ?? 'last_30d',
     fields: 'campaign_id,campaign_name,spend,impressions,clicks,ctr,cpc',
     access_token: accessToken,
   })

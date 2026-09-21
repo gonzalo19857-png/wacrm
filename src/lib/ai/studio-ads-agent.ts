@@ -14,9 +14,10 @@ export function buildAdsAdvisorPlannerSystemPrompt(args: {
   businessContext: string | null
   products: CatalogProduct[]
   campaignInsights: CampaignInsight[] | null
+  todayInsights: CampaignInsight[] | null
   referenceCampaigns: CampaignReference[]
 }): string {
-  const { businessContext, products, campaignInsights, referenceCampaigns } = args
+  const { businessContext, products, campaignInsights, todayInsights, referenceCampaigns } = args
   const parts: string[] = [
     'You are the in-house Meta Ads advisor for this business, having a planning conversation with the owner about new Click-to-WhatsApp ad campaigns (a native "Send WhatsApp" button ad, not a link-click ad). ' +
       'This is a conversation, not the final deliverable — help them decide, campaign by campaign, what angle/location/product to feature and what daily budget to use. Ask a short clarifying question when something material is missing (which product/zone to feature, budget), but don\'t interrogate — keep it light and move the planning forward. ' +
@@ -55,6 +56,20 @@ export function buildAdsAdvisorPlannerSystemPrompt(args: {
     parts.push(`Real performance of the account's Meta Ads campaigns, last 30 days:\n${list}`)
   } else {
     parts.push('No hay datos de rendimiento de Meta Ads disponibles todavía (cuenta sin campañas con actividad reciente, o sin conexión).')
+  }
+
+  if (todayInsights && todayInsights.length > 0) {
+    const list = todayInsights
+      .map(
+        (c) =>
+          `- ${c.campaignName}: gasto ${c.spend.toFixed(2)}, ${c.clicks} clics, CTR ${c.ctr.toFixed(2)}%, CPC ${c.cpc.toFixed(2)}`,
+      )
+      .join('\n')
+    parts.push(
+      `Real performance of the account's Meta Ads campaigns TODAY only (in the ad account's own timezone) — use this whenever the owner asks specifically about "hoy"/today rather than the 30-day totals above:\n${list}`,
+    )
+  } else {
+    parts.push('No hay gasto registrado hoy todavía en ninguna campaña.')
   }
 
   if (businessContext && businessContext.trim()) {
