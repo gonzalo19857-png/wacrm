@@ -4,15 +4,33 @@ import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { getCampaignInsights } from '@/lib/studio/meta-ads'
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
 /**
  * GET /api/studio/ads/insights  (agent+)
+ * GET /api/studio/ads/insights?since=YYYY-MM-DD&until=YYYY-MM-DD
  *
- * Campaign-level Meta Ads performance for the last 30 days, merged
- * with the local studio_ads row (name/status/daily_budget) when one
- * exists for that campaignId. Read-only — see src/lib/studio/meta-ads.ts.
+ * Campaign-level Meta Ads performance for the last 30 days (default)
+ * or a custom inclusive date range, merged with the local studio_ads
+ * row (name/status/daily_budget) when one exists for that campaignId.
+ * Read-only — see src/lib/studio/meta-ads.ts.
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const url = new URL(request.url)
+    const since = url.searchParams.get('since')
+    const until = url.searchParams.get('until')
+    let timeRange: { since: string; until: string } | undefined
+    if (since || until) {
+      if (!since || !until || !DATE_RE.test(since) || !DATE_RE.test(until)) {
+        return NextResponse.json(
+          { error: 'since and until must both be YYYY-MM-DD.' },
+          { status: 400 },
+        )
+      }
+      timeRange = { since, until }
+    }
+
     const { supabase, accountId, userId } = await requireRole('agent')
 
     const limit = checkRateLimit(`studio-ads-insights:${userId}`, RATE_LIMITS.studioAdsInsights)
@@ -38,6 +56,7 @@ export async function GET() {
     const insights = await getCampaignInsights({
       adAccountId: connection.ad_account_id,
       accessToken,
+      timeRange,
     })
 
     const { data: localAds, error: localAdsError } = await supabase

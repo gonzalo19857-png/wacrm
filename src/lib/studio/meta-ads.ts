@@ -113,14 +113,20 @@ export async function getCampaignInsights(args: {
   adAccountId: string
   accessToken: string
   datePreset?: string
+  /** Custom range (YYYY-MM-DD, inclusive both ends) — overrides datePreset when given. */
+  timeRange?: { since: string; until: string }
 }): Promise<CampaignInsight[]> {
-  const { adAccountId, accessToken, datePreset } = args
+  const { adAccountId, accessToken, datePreset, timeRange } = args
   const params = new URLSearchParams({
     level: 'campaign',
-    date_preset: datePreset ?? 'last_30d',
     fields: 'campaign_id,campaign_name,spend,impressions,clicks,ctr,cpc',
     access_token: accessToken,
   })
+  if (timeRange) {
+    params.set('time_range', JSON.stringify(timeRange))
+  } else {
+    params.set('date_preset', datePreset ?? 'last_30d')
+  }
   const response = await fetch(`${META_API_BASE}/${adAccountId}/insights?${params.toString()}`)
   if (!response.ok) {
     await throwMetaError(response, `Meta campaign insights lookup failed: ${response.status}`)
