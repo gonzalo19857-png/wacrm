@@ -19,6 +19,7 @@ import { getShipmentStatusContext, parseShipmentSentinel, upsertShipmentFromSent
 import { pushUpdateShipment } from '@/lib/contacts/sale-sheet'
 import { logAiUsage } from './usage'
 import { engineSendText, engineSendMedia } from '@/lib/flows/meta-send'
+import { engineSendMessengerText, engineSendMessengerMedia } from '@/lib/messenger/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 
 interface DispatchArgs {
@@ -29,6 +30,10 @@ interface DispatchArgs {
   /** The account's WhatsApp config owner, used for the outbound send's
    *  audit columns (mirrors how the flow runner passes it through). */
   configOwnerUserId: string
+  /** Which channel this conversation is on — decides which Send API and
+   *  formatting rules apply. Defaults to 'whatsapp' so the existing
+   *  WhatsApp webhook call site needs no change. */
+  channel?: 'whatsapp' | 'messenger'
 }
 
 /**
@@ -56,7 +61,7 @@ interface DispatchArgs {
 export async function dispatchInboundToAiReply(
   args: DispatchArgs,
 ): Promise<void> {
-  const { accountId, conversationId, contactId, configOwnerUserId } = args
+  const { accountId, conversationId, contactId, configOwnerUserId, channel = 'whatsapp' } = args
 
   try {
     const db = supabaseAdmin()
@@ -81,6 +86,7 @@ export async function dispatchInboundToAiReply(
         contactId,
         reason: 'needs_human',
         detail,
+        channel,
       })
     }
 
@@ -237,8 +243,10 @@ export async function dispatchInboundToAiReply(
     )
     // Enforce bold talla/price + spacing deterministically — prompting
     // alone gets it right only some of the time. No-op on text that
-    // doesn't mention a talla or an S/ price.
-    const text = enforceWhatsAppEmphasis(dedupedText)
+    // doesn't mention a talla or an S/ price. WhatsApp-only: Messenger
+    // doesn't render `*text*` as bold, so it would show literal
+    // asterisks — leave the model's plain text alone there instead.
+    const text = channel === 'whatsapp' ? enforceWhatsAppEmphasis(dedupedText) : dedupedText
 
     // Persist any delivery data the model gathered this turn (migration
     // 052) — independent of noReply/handoff below, since a Lima order
@@ -346,6 +354,7 @@ export async function dispatchInboundToAiReply(
         reason: 'handoff',
         detail: summary,
         handoffReason,
+        channel,
       })
 
       return
@@ -376,14 +385,22 @@ export async function dispatchInboundToAiReply(
     if (claimed !== true) return // lost the per-conversation cap race
 
     const sendText = () =>
-      engineSendText({
-        accountId,
-        userId: configOwnerUserId,
-        conversationId,
-        contactId,
-        text,
-        aiGenerated: true,
-      })
+      channel === 'messenger'
+        ? engineSendMessengerText({
+            accountId,
+            conversationId,
+            contactId,
+            text,
+            aiGenerated: true,
+          })
+        : engineSendText({
+            accountId,
+            userId: configOwnerUserId,
+            conversationId,
+            contactId,
+            text,
+            aiGenerated: true,
+          })
 
     // Which image (if any) to attach: ONLY the model's own explicit
     // `[[IMAGE:<key>]]` pick — never the RAG top-matched-document image
@@ -403,16 +420,28 @@ export async function dispatchInboundToAiReply(
     // the image rather than risk the send failing outright.
     if (resolvedImageUrl && text.length <= 1024) {
       try {
-        await engineSendMedia({
-          accountId,
-          userId: configOwnerUserId,
-          conversationId,
-          contactId,
-          kind: 'image',
-          link: resolvedImageUrl,
-          caption: text,
-          aiGenerated: true,
-        })
+        if (channel === 'messenger') {
+          await engineSendMessengerMedia({
+            accountId,
+            conversationId,
+            contactId,
+            kind: 'image',
+            link: resolvedImageUrl,
+            caption: text,
+            aiGenerated: true,
+          })
+        } else {
+          await engineSendMedia({
+            accountId,
+            userId: configOwnerUserId,
+            conversationId,
+            contactId,
+            kind: 'image',
+            link: resolvedImageUrl,
+            caption: text,
+            aiGenerated: true,
+          })
+        }
       } catch (err) {
         console.error(
           '[ai auto-reply] image+caption send failed, falling back to text-only:',

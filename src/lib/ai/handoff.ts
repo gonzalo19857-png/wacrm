@@ -1,6 +1,19 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ChatMessage } from './types'
 import { notifyTelegramDestinations } from '@/lib/telegram/destinations'
+import { isMessengerContactPhone } from '@/lib/messenger/psid-utils'
+
+/** Human-friendly "who" for a Telegram alert — falls back to the
+ *  contact's name, then phone, but never leaks the raw `psid:...`
+ *  value Messenger contacts are stored under (see
+ *  src/lib/messenger/psid-utils.ts). */
+function contactDisplayName(contact: { name?: string | null; phone?: string | null } | null): string {
+  const name = contact?.name?.trim()
+  if (name) return name
+  const phone = contact?.phone
+  if (phone && !isMessengerContactPhone(phone)) return phone
+  return phone ? 'un cliente de Facebook Messenger' : 'un contacto'
+}
 
 /** Longest the quoted customer message runs before we ellipsize it —
  *  keeps the internal note to a glanceable one-liner. */
@@ -84,21 +97,25 @@ export async function sendNeedsReplyTelegramAlert(
     reason: NeedsReplyReason
     detail: string
     handoffReason?: string | null
+    /** Which channel this thread is on — tags the alert so staff know
+     *  to reply on Facebook, not WhatsApp, for a Messenger thread. */
+    channel?: 'whatsapp' | 'messenger'
   },
 ): Promise<void> {
-  const { accountId, conversationId, contactId, reason, detail, handoffReason } = args
+  const { accountId, conversationId, contactId, reason, detail, handoffReason, channel } = args
   try {
     const { data: contact } = await db
       .from('contacts')
       .select('name, phone')
       .eq('id', contactId)
       .maybeSingle()
-    const who = contact?.name?.trim() || contact?.phone || 'un contacto'
+    const who = contactDisplayName(contact)
 
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/+$/, '')
     const link = siteUrl ? `\n\nAbrir: ${siteUrl}/inbox?c=${conversationId}` : ''
+    const channelTag = channel === 'messenger' ? ' (Facebook Messenger)' : ''
 
-    const text = `${REASON_HEADERS[reason]}\n\nContacto: ${who}\n${detail}${link}`
+    const text = `${REASON_HEADERS[reason]}${channelTag}\n\nContacto: ${who}\n${detail}${link}`
 
     await notifyTelegramDestinations(db, accountId, 'needs_human', text)
 
@@ -139,7 +156,7 @@ export async function sendNewSaleTelegramAlert(
       .select('name, phone')
       .eq('id', contactId)
       .maybeSingle()
-    const who = contact?.name?.trim() || contact?.phone || 'un contacto'
+    const who = contactDisplayName(contact)
 
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/+$/, '')
     const link = siteUrl ? `\n\nAbrir: ${siteUrl}/contacts` : ''
@@ -186,7 +203,7 @@ export async function sendShipmentReadyTelegramAlert(
       .select('name, phone')
       .eq('id', contactId)
       .maybeSingle()
-    const who = contact?.name?.trim() || contact?.phone || 'un contacto'
+    const who = contactDisplayName(contact)
 
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/+$/, '')
     const link = siteUrl ? `\n\nAbrir: ${siteUrl}/contacts` : ''
