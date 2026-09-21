@@ -380,6 +380,56 @@ export interface AdSetTargeting {
   ageMax: number
   /** Omit for "all" — Meta defaults to every gender when unset. */
   genders?: 1 | 2
+  /**
+   * City-radius targeting (one or more points) — when present, this
+   * REPLACES `countries` in the targeting sent to Meta. Lets a campaign
+   * cover several distinct nearby towns precisely (each its own radius)
+   * instead of one oversized blob, or a single city sized to its own
+   * urban footprint.
+   */
+  cities?: { key: string; radiusKm: number }[]
+}
+
+export interface CitySearchResult {
+  key: string
+  name: string
+  region: string | null
+  countryCode: string | null
+}
+
+/**
+ * Resolves a free-text place name to Meta's geo-targeting city objects
+ * (Marketing API's Targeting Search — `/search?type=adgeolocation`).
+ * Read-only; callers pick the best match (usually the first result
+ * restricted to the given country) and pass its `key` to
+ * AdSetTargeting.cities.
+ */
+export async function searchCity(args: {
+  accessToken: string
+  query: string
+  countryCode?: string
+}): Promise<CitySearchResult[]> {
+  const { accessToken, query, countryCode } = args
+  const params = new URLSearchParams({
+    type: 'adgeolocation',
+    location_types: JSON.stringify(['city']),
+    q: query,
+    access_token: accessToken,
+  })
+  if (countryCode) params.set('country_code', countryCode)
+  const response = await fetch(`${META_API_BASE}/search?${params.toString()}`)
+  if (!response.ok) {
+    await throwMetaError(response, `Meta city search failed: ${response.status}`)
+  }
+  const data = (await response.json()) as {
+    data?: { key: string; name: string; region?: string; country_code?: string }[]
+  }
+  return (data.data ?? []).map((row) => ({
+    key: row.key,
+    name: row.name,
+    region: row.region ?? null,
+    countryCode: row.country_code ?? null,
+  }))
 }
 
 export async function createAdSet(args: {
@@ -422,7 +472,16 @@ export async function createAdSet(args: {
       ? { destination_type: 'WHATSAPP', promoted_object: { page_id: pageId } }
       : {}),
     targeting: {
-      geo_locations: { countries: targeting.countries },
+      geo_locations:
+        targeting.cities && targeting.cities.length > 0
+          ? {
+              cities: targeting.cities.map((c) => ({
+                key: c.key,
+                radius: c.radiusKm,
+                distance_unit: 'kilometer',
+              })),
+            }
+          : { countries: targeting.countries },
       age_min: targeting.ageMin,
       age_max: targeting.ageMax,
       ...(targeting.genders ? { genders: [targeting.genders] } : {}),
@@ -444,6 +503,20 @@ export async function createAdCreative(args: {
   imageUrl: string
   callToActionType: string
   destinationType?: 'whatsapp'
+  /**
+   * Reuse an existing, already-uploaded video instead of a static
+   * image — same object_story_spec.video_data shape Meta itself uses,
+   * confirmed by inspecting the account's own proven Click-to-WhatsApp
+   * ad. `pageWelcomeMessage` is that ad's own "Conversaciones" ice-
+   * breaker config (raw JSON string), copied verbatim so every new
+   * campaign opens the chat with the same greeting/quick-reply flow.
+   */
+  video?: {
+    videoId: string
+    thumbnailUrl: string
+    linkDescription?: string
+    pageWelcomeMessage?: string
+  }
 }): Promise<{ id: string }> {
   const {
     adAccountId,
@@ -457,6 +530,7 @@ export async function createAdCreative(args: {
     imageUrl,
     callToActionType,
     destinationType,
+    video,
   } = args
   const isWhatsApp = destinationType === 'whatsapp'
   return metaPost(`/${adAccountId}/adcreatives`, accessToken, {
@@ -469,20 +543,34 @@ export async function createAdCreative(args: {
       // isn't essential for a WhatsApp CTA ad, so skip it there rather
       // than block the whole ad on an Instagram-specific requirement.
       ...(instagramActorId && !isWhatsApp ? { instagram_actor_id: instagramActorId } : {}),
-      link_data: {
-        message,
-        name: headline,
-        picture: imageUrl,
-        // link_data requires a `link` regardless of CTA type — for
-        // WhatsApp ads this is the same fixed placeholder Meta itself
-        // uses (confirmed by inspecting the account's own working
-        // Click-to-WhatsApp ad); the CTA's app_destination is what
-        // actually routes the click to WhatsApp, not this URL.
-        link: isWhatsApp ? 'https://api.whatsapp.com/send' : linkUrl,
-        ...(isWhatsApp
-          ? { call_to_action: { type: 'WHATSAPP_MESSAGE', value: { app_destination: 'WHATSAPP' } } }
-          : { call_to_action: { type: callToActionType, value: { link: linkUrl } } }),
-      },
+      ...(video
+        ? {
+            video_data: {
+              video_id: video.videoId,
+              title: headline,
+              message,
+              image_url: video.thumbnailUrl,
+              ...(video.linkDescription ? { link_description: video.linkDescription } : {}),
+              call_to_action: { type: 'WHATSAPP_MESSAGE', value: { app_destination: 'WHATSAPP' } },
+              ...(video.pageWelcomeMessage ? { page_welcome_message: video.pageWelcomeMessage } : {}),
+            },
+          }
+        : {
+            link_data: {
+              message,
+              name: headline,
+              picture: imageUrl,
+              // link_data requires a `link` regardless of CTA type — for
+              // WhatsApp ads this is the same fixed placeholder Meta itself
+              // uses (confirmed by inspecting the account's own working
+              // Click-to-WhatsApp ad); the CTA's app_destination is what
+              // actually routes the click to WhatsApp, not this URL.
+              link: isWhatsApp ? 'https://api.whatsapp.com/send' : linkUrl,
+              ...(isWhatsApp
+                ? { call_to_action: { type: 'WHATSAPP_MESSAGE', value: { app_destination: 'WHATSAPP' } } }
+                : { call_to_action: { type: callToActionType, value: { link: linkUrl } } }),
+            },
+          }),
     },
   })
 }
@@ -540,6 +628,13 @@ export interface CreateAdEndToEndArgs {
   destinationType?: 'whatsapp'
   linkUrl?: string
   callToActionType?: string
+  /** Reuse an existing video instead of imageUrl — see createAdCreative. */
+  video?: {
+    videoId: string
+    thumbnailUrl: string
+    linkDescription?: string
+    pageWelcomeMessage?: string
+  }
 }
 
 /**
@@ -566,6 +661,7 @@ export async function createAdEndToEnd(
     destinationType,
     linkUrl,
     callToActionType,
+    video,
   } = args
 
   let campaignId: string | null = null
@@ -601,6 +697,7 @@ export async function createAdEndToEnd(
       imageUrl,
       callToActionType: callToActionType ?? 'LEARN_MORE',
       destinationType,
+      video,
     })
 
     const ad = await createAd({
