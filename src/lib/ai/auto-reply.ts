@@ -17,6 +17,7 @@ import {
 import { getProductImage } from './product-images'
 import { getShipmentStatusContext, parseShipmentSentinel, upsertShipmentFromSentinel } from './shipment'
 import { pushUpdateShipment } from '@/lib/contacts/sale-sheet'
+import { applyPotentialTag } from '@/lib/contacts/lifecycle-tags'
 import { logAiUsage } from './usage'
 import { engineSendText, engineSendMedia } from '@/lib/flows/meta-send'
 import { engineSendMessengerText, engineSendMessengerMedia } from '@/lib/messenger/meta-send'
@@ -223,6 +224,7 @@ export async function dispatchInboundToAiReply(
       noReply,
       imageKey,
       shipmentRaw,
+      reachedPaymentInfo,
       usage,
     } = await generateReply({
       config,
@@ -294,6 +296,14 @@ export async function dispatchInboundToAiReply(
       } catch (err) {
         console.error('[ai auto-reply] shipment sentinel persist failed:', err)
       }
+    }
+
+    // Auto-tag the contact "Potencial" the moment the bot has told
+    // them the payment methods (migration 064) — independent of
+    // noReply/handoff below, same reasoning as the shipment persist
+    // above: the sentinel reflects what was said this turn either way.
+    if (reachedPaymentInfo) {
+      await applyPotentialTag(db, accountId, contactId)
     }
 
     // Record token spend on the account's BYO key. Fire-and-forget so it

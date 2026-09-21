@@ -7,6 +7,7 @@ import { pushSaleToGoogleForm } from '@/lib/contacts/sale-form';
 import { pushSetRegion } from '@/lib/contacts/sale-sheet';
 import { sendNewSaleTelegramAlert } from '@/lib/ai/handoff';
 import { mergeShipmentFields } from '@/lib/shipments/store';
+import { clearLifecycleTagsOnSale } from '@/lib/contacts/lifecycle-tags';
 import {
   ContactTagWriteError,
   removeContactTag,
@@ -110,6 +111,12 @@ export async function POST(
           fecha: fecha ?? undefined,
         });
         saleId = sale?.id ?? null;
+
+        // A closed sale means this contact is no longer "Potencial"
+        // or "Caída" (migration 064) — clear both, best-effort.
+        if (saleId) {
+          await clearLifecycleTagsOnSale(ctx.supabase, ctx.accountId, contactId);
+        }
 
         // A region picked right in the sale dialog (migration 052) —
         // just sets `region` on the contact's open shipment (creating

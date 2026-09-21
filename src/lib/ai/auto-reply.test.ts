@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
   getProductImage: vi.fn(),
   sendNeedsReplyTelegramAlert: vi.fn(),
   quoteLastCustomerMessage: vi.fn(),
+  applyPotentialTag: vi.fn(),
   state: {
     conv: null as Record<string, unknown> | null,
     autoResponders: [] as { id: string }[],
@@ -38,6 +39,9 @@ vi.mock('./handoff', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   sendNeedsReplyTelegramAlert: h.sendNeedsReplyTelegramAlert,
   quoteLastCustomerMessage: h.quoteLastCustomerMessage,
+}))
+vi.mock('@/lib/contacts/lifecycle-tags', () => ({
+  applyPotentialTag: h.applyPotentialTag,
 }))
 vi.mock('@/lib/flows/meta-send', () => ({
   engineSendText: h.engineSendText,
@@ -132,6 +136,54 @@ beforeEach(() => {
   h.sendNeedsReplyTelegramAlert.mockClear()
   h.quoteLastCustomerMessage.mockReset()
   h.quoteLastCustomerMessage.mockResolvedValue('Último mensaje: "hola"')
+  h.applyPotentialTag.mockReset()
+})
+
+describe('dispatchInboundToAiReply — Potencial tagging', () => {
+  it('applies the Potencial tag when the model reaches the payment-info stage', async () => {
+    h.generateReply.mockResolvedValue({
+      text: 'Puedes pagar por Yape',
+      handoff: false,
+      imageKey: null,
+      reachedPaymentInfo: true,
+    })
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.applyPotentialTag).toHaveBeenCalledTimes(1)
+    expect(h.applyPotentialTag).toHaveBeenCalledWith(
+      expect.anything(),
+      ARGS.accountId,
+      ARGS.contactId,
+    )
+  })
+
+  it('does not tag when the model never reached payment info', async () => {
+    h.generateReply.mockResolvedValue({
+      text: 'El precio es S/120',
+      handoff: false,
+      imageKey: null,
+      reachedPaymentInfo: false,
+    })
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.applyPotentialTag).not.toHaveBeenCalled()
+  })
+
+  it('still tags even when the turn ends in a handoff', async () => {
+    h.generateReply.mockResolvedValue({
+      text: '',
+      handoff: true,
+      handoffReason: null,
+      imageKey: null,
+      reachedPaymentInfo: true,
+    })
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.applyPotentialTag).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('dispatchInboundToAiReply — eligibility gates', () => {

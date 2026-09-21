@@ -129,6 +129,14 @@ export interface Tag {
    *  sheet webhook, if configured (migration 050). Null/absent means
    *  this tag doesn't represent a region. */
   region_value?: string | null;
+  /** When true, the AI bot auto-applies this tag to a contact the
+   *  moment it tells them the payment methods — the customer got to
+   *  the last step without buying yet (migration 064). */
+  is_potential_tag?: boolean;
+  /** When true, the lifecycle cron auto-applies this tag to a contact
+   *  that has gone quiet (past the account's `dropped_after_hours`)
+   *  without a sale on file (migration 064). */
+  is_dropped_tag?: boolean;
 }
 
 export interface ContactTag {

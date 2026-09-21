@@ -6,6 +6,7 @@ import { mirrorInboundMedia } from '@/lib/whatsapp/mirror-inbound-media'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { reopenClosedConversation } from '@/lib/conversations/reopen'
+import { clearDroppedTagOnReactivation } from '@/lib/contacts/lifecycle-tags'
 import { findOrCreateConversation } from '@/lib/conversations/find-or-create'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
@@ -873,6 +874,11 @@ async function processMessage(
   // update above so the write can be gated on the row's CURRENT status in
   // SQL — see the helper for why that matters.
   await reopenClosedConversation(supabaseAdmin(), conversation)
+
+  // The customer just wrote in again — if they'd been marked "Caída"
+  // (migration 064), the recontact worked, so clear it rather than
+  // leave it sitting there. Best-effort.
+  await clearDroppedTagOnReactivation(supabaseAdmin(), accountId, contactRecord.id)
 
   // If this contact was a recent broadcast recipient, flag the reply
   // so the broadcast's `replied_count` advances (via the aggregate

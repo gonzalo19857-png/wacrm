@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { findOrCreateConversation } from '@/lib/conversations/find-or-create'
+import { clearDroppedTagOnReactivation } from '@/lib/contacts/lifecycle-tags'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { toContactPhone } from '@/lib/messenger/psid-utils'
 
@@ -201,6 +202,8 @@ async function processMessage(
   if (convError) {
     console.error('[messenger webhook] error bumping conversation:', convError)
   }
+
+  await clearDroppedTagOnReactivation(supabaseAdmin(), accountId, contact.id)
 
   if (contentText?.trim()) {
     await dispatchInboundToAiReply({

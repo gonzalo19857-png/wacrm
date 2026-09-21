@@ -47,6 +47,7 @@ describe('parseGeneration', () => {
       noReply: false,
       imageKey: null,
       shipmentRaw: null,
+      reachedPaymentInfo: false,
       usage: null,
     })
   })
@@ -59,6 +60,7 @@ describe('parseGeneration', () => {
       noReply: false,
       imageKey: null,
       shipmentRaw: null,
+      reachedPaymentInfo: false,
       usage: null,
     })
     expect(parseGeneration('Let me get a human [[HANDOFF]]')).toEqual({
@@ -68,6 +70,7 @@ describe('parseGeneration', () => {
       noReply: false,
       imageKey: null,
       shipmentRaw: null,
+      reachedPaymentInfo: false,
       usage: null,
     })
   })
@@ -80,6 +83,7 @@ describe('parseGeneration', () => {
       noReply: false,
       imageKey: null,
       shipmentRaw: null,
+      reachedPaymentInfo: false,
       usage: null,
     })
     expect(parseGeneration('Perfecto [[HANDOFF:provincia]]')).toEqual({
@@ -89,6 +93,7 @@ describe('parseGeneration', () => {
       noReply: false,
       imageKey: null,
       shipmentRaw: null,
+      reachedPaymentInfo: false,
       usage: null,
     })
     // Case-insensitive on the way in, normalized to lowercase on the way out.
@@ -103,6 +108,7 @@ describe('parseGeneration', () => {
       noReply: true,
       imageKey: null,
       shipmentRaw: null,
+      reachedPaymentInfo: false,
       usage: null,
     })
   })
@@ -116,6 +122,7 @@ describe('parseGeneration', () => {
       noReply: false,
       imageKey: null,
       shipmentRaw: null,
+      reachedPaymentInfo: false,
       usage,
     })
   })
@@ -128,6 +135,7 @@ describe('parseGeneration', () => {
       noReply: false,
       imageKey: 'sedan-l',
       shipmentRaw: null,
+      reachedPaymentInfo: false,
       usage: null,
     })
   })
@@ -156,6 +164,7 @@ describe('parseGeneration', () => {
       noReply: false,
       imageKey: null,
       shipmentRaw: 'region=provincia;city=Arequipa;agency=Shalom Mercaderes;name=Juan Perez',
+      reachedPaymentInfo: false,
       usage: null,
     })
   })
@@ -166,6 +175,18 @@ describe('parseGeneration', () => {
     )
     expect(result.text).toBe('Anotado\n\nY el DNI')
     expect(result.shipmentRaw).toBe('name=Juan')
+  })
+
+  it('detects + strips the payment-info stage sentinel', () => {
+    const result = parseGeneration(
+      'Puedes pagar por Yape o transferencia al 987654321 [[STAGE:MEDIOS_PAGO]]',
+    )
+    expect(result.text).toBe('Puedes pagar por Yape o transferencia al 987654321')
+    expect(result.reachedPaymentInfo).toBe(true)
+  })
+
+  it('does not flag payment-info reached when the sentinel is absent', () => {
+    expect(parseGeneration('Claro, el precio es S/120').reachedPaymentInfo).toBe(false)
   })
 })
 
@@ -192,6 +213,7 @@ describe('generateReply — OpenAI', () => {
       noReply: false,
       imageKey: null,
       shipmentRaw: null,
+      reachedPaymentInfo: false,
       usage: { promptTokens: 42, completionTokens: 8, totalTokens: 50 },
     })
     const [url, opts] = fetchMock.mock.calls[0]
@@ -255,6 +277,7 @@ describe('generateReply — Anthropic', () => {
       noReply: false,
       imageKey: null,
       shipmentRaw: null,
+      reachedPaymentInfo: false,
       usage: { promptTokens: 30, completionTokens: 6, totalTokens: 36 },
     })
     const [url, opts] = fetchMock.mock.calls[0]
@@ -340,6 +363,7 @@ describe('generateReply — OpenRouter', () => {
       noReply: false,
       imageKey: null,
       shipmentRaw: null,
+      reachedPaymentInfo: false,
       usage: { promptTokens: 42, completionTokens: 8, totalTokens: 50 },
     })
     const [url, opts] = fetchMock.mock.calls[0]

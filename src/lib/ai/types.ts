@@ -75,6 +75,11 @@ export interface GenerateResult {
    *  (auto-reply mode), or null if the model didn't emit one this
    *  turn. Parsed by `src/lib/ai/shipment.ts#parseShipmentSentinel`. */
   shipmentRaw: string | null
+  /** True when the model emitted `[[STAGE:MEDIOS_PAGO]]` this turn —
+   *  it just told the customer the payment methods/instructions
+   *  (auto-reply mode). Used to auto-apply the account's "Potencial"
+   *  tag. */
+  reachedPaymentInfo: boolean
   /** Provider token usage for this call, or null when unavailable. */
   usage: AiUsage | null
 }

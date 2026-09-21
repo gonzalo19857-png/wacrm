@@ -9,6 +9,7 @@ import {
   HANDOFF_SENTINEL_REGEX,
   IMAGE_SENTINEL_REGEX,
   NOREPLY_SENTINEL,
+  POTENCIAL_SENTINEL_REGEX,
   SHIPMENT_SENTINEL_REGEX,
   aiRequestTimeoutMs,
 } from './defaults'
@@ -83,6 +84,7 @@ export function parseGeneration(
   const imageKey = imageMatch ? imageMatch[1].trim() : null
   const shipmentMatch = raw.match(SHIPMENT_SENTINEL_REGEX)
   const shipmentRaw = shipmentMatch ? shipmentMatch[1].trim() : null
+  const reachedPaymentInfo = POTENCIAL_SENTINEL_REGEX.test(raw)
   // Strip every occurrence, not just the first: neither regex has a /g
   // flag (match() with one wouldn't give us the capture groups above),
   // but a non-global replace() only removes the first match — if the
@@ -92,12 +94,23 @@ export function parseGeneration(
   const handoffSentinelGlobal = new RegExp(HANDOFF_SENTINEL_REGEX.source, 'g')
   const imageSentinelGlobal = new RegExp(IMAGE_SENTINEL_REGEX.source, 'g')
   const shipmentSentinelGlobal = new RegExp(SHIPMENT_SENTINEL_REGEX.source, 'g')
+  const potencialSentinelGlobal = new RegExp(POTENCIAL_SENTINEL_REGEX.source, 'g')
   const text = raw
     .replace(handoffSentinelGlobal, '')
     .split(NOREPLY_SENTINEL)
     .join('')
     .replace(imageSentinelGlobal, '')
     .replace(shipmentSentinelGlobal, '')
+    .replace(potencialSentinelGlobal, '')
     .trim()
-  return { text, handoff, handoffReason, noReply, imageKey, shipmentRaw, usage }
+  return {
+    text,
+    handoff,
+    handoffReason,
+    noReply,
+    imageKey,
+    shipmentRaw,
+    reachedPaymentInfo,
+    usage,
+  }
 }

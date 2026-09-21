@@ -78,6 +78,7 @@ export function AiConfig() {
   const [maxPerConversation, setMaxPerConversation] = useState(3);
   // Empty string = leave unassigned (shared queue).
   const [handoffAgentId, setHandoffAgentId] = useState('');
+  const [droppedAfterHours, setDroppedAfterHours] = useState(48);
   const [members, setMembers] = useState<AccountMember[]>([]);
 
   // Guard keyed on the account (not a bare boolean) so an in-place
@@ -104,6 +105,7 @@ export function AiConfig() {
         setAutoReplyEnabled(data.auto_reply_enabled);
         setMaxPerConversation(data.auto_reply_max_per_conversation ?? 3);
         setHandoffAgentId(data.handoff_agent_id ?? '');
+        setDroppedAfterHours(data.dropped_after_hours ?? 48);
         setHasStoredKey(Boolean(data.has_key));
         setApiKey(data.has_key ? MASKED_KEY : '');
         setKeyEdited(false);
@@ -156,6 +158,7 @@ export function AiConfig() {
     auto_reply_enabled: autoReplyEnabled,
     auto_reply_max_per_conversation: maxPerConversation,
     handoff_agent_id: handoffAgentId || null,
+    dropped_after_hours: droppedAfterHours,
   });
 
   const handleTest = async () => {
@@ -495,6 +498,29 @@ export function AiConfig() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <Label htmlFor="ai-dropped-hours">{t('droppedAfterHours')}</Label>
+                <p className="text-xs text-muted-foreground">
+                  {t('droppedAfterHoursDesc')}
+                </p>
+              </div>
+              <Input
+                id="ai-dropped-hours"
+                type="number"
+                min={1}
+                max={720}
+                value={droppedAfterHours}
+                onChange={(e) =>
+                  setDroppedAfterHours(
+                    Math.min(720, Math.max(1, Number(e.target.value) || 1)),
+                  )
+                }
+                disabled={disabled}
+                className="w-20"
+              />
             </div>
           </CardContent>
         </Card>

@@ -73,6 +73,19 @@ export const SHIPMENT_SENTINEL_PREFIX = '[[SHIPMENT:'
 /** Matches `[[SHIPMENT:<payload>]]`, capturing `<payload>`. */
 export const SHIPMENT_SENTINEL_REGEX = /\[\[SHIPMENT:([^\]]+)\]\]/
 
+/**
+ * Sentinel the model emits (auto-reply mode) the moment it actually
+ * tells the customer the payment methods/instructions — i.e. the
+ * conversation reached the last step before a sale without one
+ * closing yet. Used to auto-apply the account's "Potencial" tag
+ * (`tags.is_potential_tag`, migration 064); never shown to the
+ * customer, same handling as the other sentinels. Emitted at most
+ * once is enough — `dispatchInboundToAiReply` just checks presence,
+ * it doesn't need the payload.
+ */
+export const POTENCIAL_SENTINEL = '[[STAGE:MEDIOS_PAGO]]'
+export const POTENCIAL_SENTINEL_REGEX = /\[\[STAGE:MEDIOS_PAGO\]\]/
+
 /** Cap on generated reply length — keeps WhatsApp replies short and
  *  bounds token spend on the caller's own key. Reasoning models (e.g.
  *  OpenRouter's `deepseek/deepseek-*-flash`) spend part of this budget
@@ -229,6 +242,9 @@ export function buildSystemPrompt(args: {
     )
     parts.push(
       `If the business context below defines a process for collecting delivery/shipping details (an agency or address, a recipient name, DNI, phone, a delivery time slot, etc.), follow that process, and record whatever you confirm along the way by emitting it on its own line as ${SHIPMENT_SENTINEL_PREFIX}field=value;field2=value2]] using only these keys: region (lima or provincia), city, agency, name, dni, phone, address, reference, notes (free text — e.g. a chosen delivery slot/day). Include only fields you actually learned or confirmed this turn — never invent a value for any of them (an agency name, an address, a reference point — nothing you weren't explicitly told by the customer or given verbatim in this system prompt), and don't re-send a field already on file (see "Current shipment on file" below) unless it changed. Map by MEANING, not by the order the customer typed things in: when a customer sends several pieces of data in one message (with or without their own labels, e.g. "NOMBRE=...", a city, an agency, all on separate lines), read the whole message and match each value to the right key by what it actually is — \`name\` is always a person's full name, never a place; \`city\`/\`agency\`/\`address\` are always places, never a person's name. Double-check before emitting: a value that looks like a place (has a department/city name, or matches something already in \`city\`) must never end up in \`name\`. This sentinel is invisible to the customer: never mention it or read its contents back to them. If "Current shipment on file" below already shows a field, don't ask for it again — only ask for what's still missing, and if the customer asks about their order's status (e.g. "¿ya llegó?"), answer directly from its \`status\` there instead of guessing or handing off.`,
+    )
+    parts.push(
+      `The moment you actually tell the customer the payment methods or payment instructions (not just mention that payment exists, the real methods/details), add ${POTENCIAL_SENTINEL} on its own line in that same reply — this happens once the conversation reaches that step, whether or not the customer ends up paying. It will be stripped from what the customer sees, so never mention or describe it in your visible reply, and never emit it for any other reason (e.g. just discussing prices or products).`,
     )
     parts.push(
       `Payment safety rule: never ask the customer to choose a payment method or give payment details until the delivery record is complete. For Provincia this means region, city, agency/address, recipient's full name, and DNI; the WhatsApp number may be used as the phone unless the customer gives another one. If any required detail is missing, ask only for the missing detail. Never treat 👍, "ok", "listo", or another brief acknowledgement as a payment selection or payment confirmation. An uncaptioned customer image is only possible payment proof when it follows the payment instructions in this same order flow; otherwise ask what it relates to. Do not announce an order as paid, confirmed, ready, or eligible for a prepayment discount without that actual proof.`,
