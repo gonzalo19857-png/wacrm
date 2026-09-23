@@ -13,6 +13,7 @@ import {
 import {
   enforceWhatsAppEmphasis,
   stripRepeatedRecommendation,
+  guardAgainstUnfilledName,
 } from './format-whatsapp'
 import { getProductImage } from './product-images'
 import { getShipmentStatusContext, parseShipmentSentinel, upsertShipmentFromSentinel } from './shipment'
@@ -243,12 +244,16 @@ export async function dispatchInboundToAiReply(
       rawText,
       priorAssistantMessages,
     )
+    // Never let a literal "[nombre]" placeholder (or a Lima order
+    // "confirmed" against it) reach the customer — see
+    // guardAgainstUnfilledName's docstring.
+    const namedText = guardAgainstUnfilledName(dedupedText)
     // Enforce bold talla/price + spacing deterministically — prompting
     // alone gets it right only some of the time. No-op on text that
     // doesn't mention a talla or an S/ price. WhatsApp-only: Messenger
     // doesn't render `*text*` as bold, so it would show literal
     // asterisks — leave the model's plain text alone there instead.
-    const text = channel === 'whatsapp' ? enforceWhatsAppEmphasis(dedupedText) : dedupedText
+    const text = channel === 'whatsapp' ? enforceWhatsAppEmphasis(namedText) : namedText
 
     // Persist any delivery data the model gathered this turn (migration
     // 052) — independent of noReply/handoff below, since a Lima order

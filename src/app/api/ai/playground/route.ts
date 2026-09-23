@@ -8,6 +8,7 @@ import { buildSystemPrompt, limaTimeHint } from '@/lib/ai/defaults'
 import {
   enforceWhatsAppEmphasis,
   stripRepeatedRecommendation,
+  guardAgainstUnfilledName,
 } from '@/lib/ai/format-whatsapp'
 import { AiError, type ChatMessage } from '@/lib/ai/types'
 
@@ -105,7 +106,9 @@ export async function POST(request: Request) {
       .filter((m) => m.role === 'assistant')
       .map((m) => m.content)
     const text = enforceWhatsAppEmphasis(
-      stripRepeatedRecommendation(rawText, priorAssistantMessages),
+      guardAgainstUnfilledName(
+        stripRepeatedRecommendation(rawText, priorAssistantMessages),
+      ),
     )
     return NextResponse.json({ reply: text, handoff, noReply })
   } catch (err) {

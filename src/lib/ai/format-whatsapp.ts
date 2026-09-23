@@ -43,6 +43,12 @@ export function enforceWhatsAppEmphasis(text: string): string {
 
 const FEATURES_HEADER = '¿Por qué elegir nuestro cobertor?'
 
+/** First "S/<amount>" found in `s`, whitespace-normalized, or null. */
+function extractPrice(s: string): string | null {
+  const m = s.match(/S\/\s?[\d][\d.,]*/)
+  return m ? m[0].replace(/\s+/g, '') : null
+}
+
 /**
  * Strips a re-stated talla/price/features recommendation block from a
  * follow-up reply, keeping only whatever new content follows it.
@@ -54,23 +60,38 @@ const FEATURES_HEADER = '¿Por qué elegir nuestro cobertor?'
  * been given got a reply that opened with the *entire* recommendation
  * again (re-typed from the model's own earlier turn, not sourced from
  * retrieved knowledge — so narrowing retrieval doesn't fix it) before
- * finally getting to the actual follow-up content. Since the features
- * block is specified to be copied verbatim every time, its presence in
- * both an earlier assistant turn and the new reply is an unambiguous
- * signal of this exact failure — safe to strip mechanically rather than
- * hope the model complies.
+ * finally getting to the actual follow-up content.
+ *
+ * The features header text is fixed and vehicle-agnostic, so its mere
+ * presence in an earlier turn is NOT enough to call this a repeat — a
+ * customer who corrects the vehicle mid-conversation (e.g. "mototaxi
+ * Torito" after the bot quoted it as a moto lineal) legitimately gets a
+ * new recommendation with the same header but a different price, and
+ * that correction must reach them, not get silently discarded (this
+ * was observed live: a corrected mototaxi price got stripped down to
+ * just the trailing follow-up question). The price quoted right before
+ * the header is what actually identifies a genuine repeat — only strip
+ * when it matches a price already quoted in an earlier turn's block.
  */
 export function stripRepeatedRecommendation(
   text: string,
   priorAssistantMessages: string[],
 ): string {
   if (!text.includes(FEATURES_HEADER)) return text
-  const alreadyGiven = priorAssistantMessages.some((m) =>
-    m.includes(FEATURES_HEADER),
-  )
-  if (!alreadyGiven) return text
 
   const headerIdx = text.indexOf(FEATURES_HEADER)
+  const currentPrice = extractPrice(text.slice(0, headerIdx))
+
+  const alreadyGiven = priorAssistantMessages.some((m) => {
+    const priorHeaderIdx = m.indexOf(FEATURES_HEADER)
+    if (priorHeaderIdx === -1) return false
+    return (
+      currentPrice !== null &&
+      currentPrice === extractPrice(m.slice(0, priorHeaderIdx))
+    )
+  })
+  if (!alreadyGiven) return text
+
   const afterHeader = text.slice(headerIdx + FEATURES_HEADER.length)
   const blankLine = afterHeader.match(/\n\s*\n/)
   if (!blankLine || blankLine.index === undefined) return text
@@ -79,4 +100,21 @@ export function stripRepeatedRecommendation(
     .slice(blankLine.index + blankLine[0].length)
     .trim()
   return remainder.length > 0 ? remainder : text
+}
+
+/**
+ * Catches a literal, unfilled "[nombre]" template placeholder that
+ * survived into the reply — observed live on the Lima closing message
+ * ("Quedó registrado: a nombre de [nombre], turno..."), sent when the
+ * customer picked a delivery slot but the model never actually asked
+ * for (or registered) their name first. The prompt tells the model to
+ * check for this before sending, but — like the repeated-recommendation
+ * and bold-formatting cases above — that instruction doesn't reliably
+ * hold on its own. Rather than let raw template syntax (or a "confirmed"
+ * order with no name on it) reach the customer, swap the whole reply for
+ * the same short re-ask the prompt itself specifies for a missing name.
+ */
+export function guardAgainstUnfilledName(text: string): string {
+  if (!text.includes('[nombre]')) return text
+  return '¡Genial! 😊 Y para dejar todo listo, ¿a nombre de quién sería el pedido? 🙏'
 }

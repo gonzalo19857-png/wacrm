@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   enforceWhatsAppEmphasis,
   stripRepeatedRecommendation,
+  guardAgainstUnfilledName,
 } from './format-whatsapp'
 
 describe('enforceWhatsAppEmphasis', () => {
@@ -103,5 +104,55 @@ describe('stripRepeatedRecommendation', () => {
     expect(
       stripRepeatedRecommendation(trailingOnly, [recommendation]),
     ).toBe(trailingOnly)
+  })
+
+  it('keeps a corrected recommendation with a different price intact (vehicle reclassified)', () => {
+    // Reproduces a real bug: the bot first quoted a moto lineal, then the
+    // customer clarified it was actually a mototaxi — a different vehicle
+    // with a different price. The corrected block shares the same fixed
+    // features header as the earlier (wrong) one, but must NOT be
+    // stripped down to just the trailing question, or the customer never
+    // sees the corrected price.
+    const motoLineal =
+      'Para su moto Bajaj recomendamos la *talla M* 😊\n' +
+      'Precio: *S/65.00* 🎁\n\n' +
+      '¿Por qué elegir nuestro cobertor? 🙌\n' +
+      '✅ Material PVC resistente\n' +
+      '✅ Interior afelpado\n\n' +
+      '¿En qué parte se encuentra? ¿Lima o provincia? 🙏'
+
+    const correctedMototaxi =
+      'Para su mototaxi Torito tenemos el cobertor 😊\n' +
+      'Precio: *S/119.90* 🎁\n\n' +
+      '¿Por qué elegir nuestro cobertor? 🙌\n' +
+      '✅ Material PVC resistente\n' +
+      '✅ Interior afelpado\n\n' +
+      '¿En qué parte se encuentra? ¿Lima o provincia? 🙏'
+
+    expect(
+      stripRepeatedRecommendation(correctedMototaxi, [motoLineal]),
+    ).toBe(correctedMototaxi)
+  })
+})
+
+describe('guardAgainstUnfilledName', () => {
+  it('swaps a Lima closing message that still has a literal [nombre] for a re-ask', () => {
+    const broken =
+      '¡Genial! 😊 Quedó registrado: a nombre de [nombre], turno tarde de hoy.\n\n' +
+      'Perfecto, en breve un asesor se pondrá en contacto para coordinar su pedido 🙌'
+    expect(guardAgainstUnfilledName(broken)).toBe(
+      '¡Genial! 😊 Y para dejar todo listo, ¿a nombre de quién sería el pedido? 🙏',
+    )
+  })
+
+  it('is a no-op when the reply has a real name, not the placeholder', () => {
+    const text =
+      '¡Genial! 😊 Quedó registrado: a nombre de Juan Perez, turno tarde de hoy.'
+    expect(guardAgainstUnfilledName(text)).toBe(text)
+  })
+
+  it('is a no-op on text with no name reference at all', () => {
+    const text = '¡Hola! ¿Para qué vehículo sería?'
+    expect(guardAgainstUnfilledName(text)).toBe(text)
   })
 })
