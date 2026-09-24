@@ -1,13 +1,14 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 
 import { requireRole, toErrorResponse } from '@/lib/auth/account';
 import { addContactTagAndDispatch } from '@/lib/contacts/tag-events';
 import { createSale } from '@/lib/contacts/sale-tag';
 import { pushSaleToGoogleForm } from '@/lib/contacts/sale-form';
-import { pushSetRegion } from '@/lib/contacts/sale-sheet';
+import { pushCreateSale, pushSetRegion } from '@/lib/contacts/sale-sheet';
 import { sendNewSaleTelegramAlert } from '@/lib/ai/handoff';
 import { mergeShipmentFields } from '@/lib/shipments/store';
 import { clearLifecycleTagsOnSale } from '@/lib/contacts/lifecycle-tags';
+import { supabaseAdmin } from '@/lib/flows/admin-client';
 import {
   ContactTagWriteError,
   removeContactTag,
@@ -77,21 +78,31 @@ export async function POST(
         .maybeSingle();
 
       if (tag?.region_value) {
-        try {
-          const { data: regionContact } = await ctx.supabase
-            .from('contacts')
-            .select('phone')
-            .eq('id', contactId)
-            .maybeSingle();
-          if (regionContact?.phone) {
-            await pushSetRegion(ctx.supabase, ctx.accountId, {
-              telefono: regionContact.phone,
-              ciudad: tag.region_value,
-            });
+        // Deferred (migration 066-adjacent latency fix): a Google Sheet
+        // webhook push isn't needed for the response the agent's click
+        // is waiting on — same reasoning as the sale fan-out below.
+        // `after()` keeps the function alive for it regardless (see
+        // src/app/api/whatsapp/webhook/route.ts for the same pattern);
+        // a detached promise here could get frozen mid-flight.
+        const regionValue = tag.region_value;
+        after(async () => {
+          try {
+            const db = supabaseAdmin();
+            const { data: regionContact } = await db
+              .from('contacts')
+              .select('phone')
+              .eq('id', contactId)
+              .maybeSingle();
+            if (regionContact?.phone) {
+              await pushSetRegion(db, ctx.accountId, {
+                telefono: regionContact.phone,
+                ciudad: regionValue,
+              });
+            }
+          } catch (err) {
+            console.error('[contacts/tags] region sheet push failed:', err);
           }
-        } catch (err) {
-          console.error('[contacts/tags] region sheet push failed:', err);
-        }
+        });
       }
 
       if (tag?.is_sale_tag && price !== null) {
@@ -111,6 +122,7 @@ export async function POST(
           fecha: fecha ?? undefined,
         });
         saleId = sale?.id ?? null;
+        const modelo = sale?.modelo ?? 'UNFOUND';
 
         // A closed sale means this contact is no longer "Potencial"
         // or "Caída" (migration 064) — clear both, best-effort.
@@ -137,55 +149,79 @@ export async function POST(
           }
         }
 
-        // Fan out to whatever's configured — best-effort, never let a
-        // notification/integration failure affect the response for a
-        // sale that already saved.
+        // Fan out to whatever's configured — deferred past the response
+        // (migration 066-adjacent latency fix). None of this — the
+        // Google Sheet push, the Telegram alert, the Google Form push —
+        // is needed for the "Register" button's response, and each is
+        // its own external network round trip (the Sheet one especially:
+        // an Apps Script webhook, notoriously slow to wake from cold).
+        // Best-effort either way: never let a notification/integration
+        // failure affect a sale that already saved.
         if (saleId) {
-          const [{ data: formConfig }, { data: saleContact }] = await Promise.all([
-            ctx.supabase
-              .from('sale_form_integrations')
-              .select(
-                'form_response_url, field_client_entry, field_product_entry, field_price_entry, field_phone_entry, is_active',
-              )
-              .eq('account_id', ctx.accountId)
-              .maybeSingle(),
-            ctx.supabase.from('contacts').select('name, phone').eq('id', contactId).maybeSingle(),
-          ]);
+          const tagName = tag.name;
+          after(async () => {
+            const db = supabaseAdmin();
+            const [{ data: formConfig }, { data: saleContact }] = await Promise.all([
+              db
+                .from('sale_form_integrations')
+                .select(
+                  'form_response_url, field_client_entry, field_product_entry, field_price_entry, field_phone_entry, is_active',
+                )
+                .eq('account_id', ctx.accountId)
+                .maybeSingle(),
+              db.from('contacts').select('name, phone').eq('id', contactId).maybeSingle(),
+            ]);
+            const who = saleContact?.name?.trim() || saleContact?.phone || 'Contacto';
 
-          try {
-            await sendNewSaleTelegramAlert(ctx.supabase, {
-              accountId: ctx.accountId,
-              contactId,
-              title: `${tag.name}`,
-              value: price,
-              currency,
-            });
-          } catch (err) {
-            console.error('[contacts/tags] sale Telegram alert failed:', err);
-          }
-
-          if (formConfig?.is_active && formConfig.form_response_url) {
-            try {
-              await pushSaleToGoogleForm(
-                {
-                  formResponseUrl: formConfig.form_response_url,
-                  fieldClientEntry: formConfig.field_client_entry,
-                  fieldProductEntry: formConfig.field_product_entry,
-                  fieldPriceEntry: formConfig.field_price_entry,
-                  fieldPhoneEntry: formConfig.field_phone_entry,
-                },
-                {
-                  title: tag.name,
-                  value: price,
-                  currency,
-                  clientName: saleContact?.name?.trim() || saleContact?.phone || 'Contacto',
-                  clientPhone: saleContact?.phone ?? '',
-                },
-              );
-            } catch (err) {
-              console.error('[contacts/tags] sale form push failed:', err);
+            if (fecha && saleContact?.phone) {
+              try {
+                await pushCreateSale(db, ctx.accountId, {
+                  fecha,
+                  cliente: who,
+                  telefono: saleContact.phone,
+                  modelo,
+                  precio_venta: price,
+                });
+              } catch (err) {
+                console.error('[contacts/tags] sheet push failed:', err);
+              }
             }
-          }
+
+            try {
+              await sendNewSaleTelegramAlert(db, {
+                accountId: ctx.accountId,
+                contactId,
+                title: tagName,
+                value: price,
+                currency,
+              });
+            } catch (err) {
+              console.error('[contacts/tags] sale Telegram alert failed:', err);
+            }
+
+            if (formConfig?.is_active && formConfig.form_response_url) {
+              try {
+                await pushSaleToGoogleForm(
+                  {
+                    formResponseUrl: formConfig.form_response_url,
+                    fieldClientEntry: formConfig.field_client_entry,
+                    fieldProductEntry: formConfig.field_product_entry,
+                    fieldPriceEntry: formConfig.field_price_entry,
+                    fieldPhoneEntry: formConfig.field_phone_entry,
+                  },
+                  {
+                    title: tagName,
+                    value: price,
+                    currency,
+                    clientName: who,
+                    clientPhone: saleContact?.phone ?? '',
+                  },
+                );
+              } catch (err) {
+                console.error('[contacts/tags] sale form push failed:', err);
+              }
+            }
+          });
         }
       }
     }

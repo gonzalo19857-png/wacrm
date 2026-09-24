@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { pushCreateSale, extractVehicleModel, extractDniFallback } from './sale-sheet';
+import { extractVehicleModel, extractDniFallback } from './sale-sheet';
 import { mergeShipmentFields, type ShipmentPatch } from '@/lib/shipments/store';
 
 /**
@@ -8,11 +8,13 @@ import { mergeShipmentFields, type ShipmentPatch } from '@/lib/shipments/store';
  * a fast, one-field capture (price) at the moment the agent tags the
  * chat.
  *
- * `fecha` (added alongside migration 050's live-sheet integration) is
- * optional — when present, this also best-effort pushes the sale to
- * the account's configured Google Sheet webhook (if any), including
- * the vehicle model the AI bot already identified in the contact's
- * most recent conversation.
+ * Also identifies the vehicle model and a fallback DNI from the
+ * contact's most recent conversation (best-effort, all local/DB work —
+ * fast) and seeds them onto the contact's open shipment record. Returns
+ * `modelo` so the caller can push it to the account's live Google Sheet
+ * (migration 050) itself — deliberately NOT done here: that's a slow
+ * external webhook call (Apps Script), and this function is on the
+ * critical path of the "Register" button the agent is waiting on.
  */
 export async function createSale(
   db: SupabaseClient,
@@ -25,7 +27,7 @@ export async function createSale(
     currency: string;
     fecha?: string;
   },
-): Promise<{ id: string } | null> {
+): Promise<{ id: string; modelo: string } | null> {
   const { accountId, userId, contactId, tagName, price, currency, fecha } = args;
 
   const { data: contact } = await db
@@ -54,6 +56,7 @@ export async function createSale(
     return null;
   }
 
+  let modelo = 'UNFOUND';
   if (fecha && contact?.phone) {
     try {
       const { data: conv } = await db
@@ -64,7 +67,6 @@ export async function createSale(
         .limit(1)
         .maybeSingle();
 
-      let modelo = 'UNFOUND';
       if (conv) {
         const { data: messages } = await db
           .from('messages')
@@ -112,18 +114,10 @@ export async function createSale(
           }
         }
       }
-
-      await pushCreateSale(db, accountId, {
-        fecha,
-        cliente: who,
-        telefono: contact.phone,
-        modelo,
-        precio_venta: price,
-      });
     } catch (err) {
-      console.error('[sale-tag] sheet push failed:', err);
+      console.error('[sale-tag] model/DNI lookup failed:', err);
     }
   }
 
-  return sale;
+  return { id: sale.id, modelo };
 }

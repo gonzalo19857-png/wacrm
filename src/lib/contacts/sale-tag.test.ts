@@ -56,7 +56,7 @@ describe('createSale', () => {
       currency: 'PEN',
     })
 
-    expect(sale).toEqual({ id: 'sale-new' })
+    expect(sale).toEqual({ id: 'sale-new', modelo: 'UNFOUND' })
     expect(captured).toHaveLength(1)
     expect(captured[0].table).toBe('sales')
     expect(captured[0].row).toMatchObject({
