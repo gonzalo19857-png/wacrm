@@ -38,18 +38,34 @@ export async function createSale(
 
   const who = contact?.name?.trim() || contact?.phone || 'contacto';
 
-  const { data: sale, error } = await db
-    .from('sales')
-    .insert({
-      account_id: accountId,
-      user_id: userId,
-      contact_id: contactId,
-      title: `${tagName} — ${who}`,
-      value: price,
-      currency,
-    })
-    .select('id')
-    .single();
+  // The sale insert and the conversation lookup below don't depend on
+  // each other (the lookup only needs `contactId`, already in hand) —
+  // run them concurrently instead of paying for two sequential round
+  // trips on the "Register" button's critical path.
+  const wantsConversation = !!(fecha && contact?.phone);
+  const [{ data: sale, error }, { data: conv }] = await Promise.all([
+    db
+      .from('sales')
+      .insert({
+        account_id: accountId,
+        user_id: userId,
+        contact_id: contactId,
+        title: `${tagName} — ${who}`,
+        value: price,
+        currency,
+      })
+      .select('id')
+      .single(),
+    wantsConversation
+      ? db
+          .from('conversations')
+          .select('id')
+          .eq('contact_id', contactId)
+          .order('last_message_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
 
   if (error) {
     console.error('[sale-tag] failed to create sale:', error.message);
@@ -57,16 +73,8 @@ export async function createSale(
   }
 
   let modelo = 'UNFOUND';
-  if (fecha && contact?.phone) {
+  if (wantsConversation) {
     try {
-      const { data: conv } = await db
-        .from('conversations')
-        .select('id')
-        .eq('contact_id', contactId)
-        .order('last_message_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
       if (conv) {
         const { data: messages } = await db
           .from('messages')

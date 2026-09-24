@@ -71,11 +71,19 @@ export async function POST(
     // add (never on a duplicate re-tag).
     let saleId: string | null = null;
     if (result.added) {
-      const { data: tag } = await ctx.supabase
-        .from('tags')
-        .select('name, is_sale_tag, region_value')
-        .eq('id', tagId)
-        .maybeSingle();
+      // Fetched together rather than gating the account lookup behind
+      // knowing `is_sale_tag` first — the two queries don't depend on
+      // each other, and `accounts` is a tiny, always-indexed lookup, so
+      // running it speculatively on every tag-add is cheaper than the
+      // extra round trip it used to cost every sale tag specifically.
+      const [{ data: tag }, { data: account }] = await Promise.all([
+        ctx.supabase
+          .from('tags')
+          .select('name, is_sale_tag, region_value')
+          .eq('id', tagId)
+          .maybeSingle(),
+        ctx.supabase.from('accounts').select('default_currency').eq('id', ctx.accountId).maybeSingle(),
+      ]);
 
       if (tag?.region_value) {
         // Deferred (migration 066-adjacent latency fix): a Google Sheet
@@ -106,11 +114,6 @@ export async function POST(
       }
 
       if (tag?.is_sale_tag && price !== null) {
-        const { data: account } = await ctx.supabase
-          .from('accounts')
-          .select('default_currency')
-          .eq('id', ctx.accountId)
-          .maybeSingle();
         const currency = account?.default_currency ?? 'USD';
         const sale = await createSale(ctx.supabase, {
           accountId: ctx.accountId,

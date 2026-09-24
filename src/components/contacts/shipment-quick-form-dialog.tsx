@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import type { ShipmentAutofillFields } from "@/lib/ai/shipment";
 
 interface ShipmentSnapshot {
   id?: string;
@@ -65,6 +66,10 @@ export function ShipmentQuickFormDialog({
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Background second pass, after the initial load, that asks the
+  // account's AI to find whatever's still missing in the conversation
+  // itself — see the effect below and shipment/autofill/route.ts.
+  const [autofilling, setAutofilling] = useState(false);
   const [shipmentId, setShipmentId] = useState<string | undefined>(undefined);
   const [product, setProduct] = useState("");
   const [recipientName, setRecipientName] = useState("");
@@ -76,26 +81,65 @@ export function ShipmentQuickFormDialog({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    setLoading(true);
-    fetch(`/api/contacts/${contactId}/shipment`)
-      .then((res) => res.json())
-      .then((body: { shipment: ShipmentSnapshot | null }) => {
-        if (cancelled) return;
-        const s = body.shipment;
-        setShipmentId(s?.id);
-        setProduct(s?.product ?? "");
-        setRecipientName(s?.recipient_name ?? "");
-        setRecipientDni(s?.recipient_dni ?? "");
-        setCity(s?.city ?? "");
-        setAgencyName(s?.agency_name ?? "");
-        setRecipientPhone(s?.recipient_phone ?? contactPhone ?? "");
-      })
-      .catch(() => {
-        if (!cancelled) setRecipientPhone(contactPhone ?? "");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+
+    async function load() {
+      setLoading(true);
+      setAutofilling(false);
+      let snapshot: ShipmentSnapshot | null = null;
+      try {
+        const res = await fetch(`/api/contacts/${contactId}/shipment`);
+        const body = (await res.json()) as { shipment: ShipmentSnapshot | null };
+        snapshot = body.shipment;
+      } catch {
+        // Fall through with an empty form — the fields below still
+        // default to contactPhone where relevant.
+      }
+      if (cancelled) return;
+
+      setShipmentId(snapshot?.id);
+      setProduct(snapshot?.product ?? "");
+      setRecipientName(snapshot?.recipient_name ?? "");
+      setRecipientDni(snapshot?.recipient_dni ?? "");
+      setCity(snapshot?.city ?? "");
+      setAgencyName(snapshot?.agency_name ?? "");
+      setRecipientPhone(snapshot?.recipient_phone ?? contactPhone ?? "");
+      setLoading(false);
+
+      // Second, slower pass: only bother asking the AI to comb the
+      // conversation when something a regex/sentinel could plausibly
+      // have missed is still blank — skip it entirely on the common
+      // case where the sentinel already filled everything.
+      const missingSomething =
+        !snapshot?.product ||
+        !snapshot?.recipient_name ||
+        !snapshot?.recipient_dni ||
+        !snapshot?.city ||
+        !snapshot?.agency_name;
+      if (!missingSomething) return;
+
+      setAutofilling(true);
+      try {
+        const res = await fetch(`/api/contacts/${contactId}/shipment/autofill`, {
+          method: "POST",
+        });
+        const body = (await res.json()) as { fields: ShipmentAutofillFields | null };
+        const f = body.fields;
+        if (!cancelled && f) {
+          if (!snapshot?.product && f.product) setProduct(f.product);
+          if (!snapshot?.recipient_name && f.name) setRecipientName(f.name);
+          if (!snapshot?.recipient_dni && f.dni) setRecipientDni(f.dni);
+          if (!snapshot?.city && f.city) setCity(f.city);
+          if (!snapshot?.agency_name && f.agency) setAgencyName(f.agency);
+          if (!snapshot?.recipient_phone && f.phone) setRecipientPhone(f.phone);
+        }
+      } catch {
+        // Best-effort suggestion — leave the fields exactly as loaded.
+      } finally {
+        if (!cancelled) setAutofilling(false);
+      }
+    }
+
+    void load();
     return () => {
       cancelled = true;
     };
@@ -141,6 +185,13 @@ export function ShipmentQuickFormDialog({
             {t("description", { name: contactName })}
           </DialogDescription>
         </DialogHeader>
+
+        {!loading && autofilling && (
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            {t("autofilling")}
+          </p>
+        )}
 
         {loading ? (
           <div className="flex items-center justify-center py-6">

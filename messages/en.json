@@ -589,6 +589,7 @@
     "shipmentQuickForm": {
       "title": "Complete the delivery details",
       "description": "{name}'s order is shipping to Provincia — fill in whatever's still missing so dispatch can pack it. Anything the AI bot already picked up is pre-filled below.",
+      "autofilling": "Looking for the rest in the conversation…",
       "later": "Fill in later",
       "save": "Save",
       "saved": "Delivery details saved",

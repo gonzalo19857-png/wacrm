@@ -6,6 +6,8 @@ import {
   type ShipmentRegion,
   type ShipmentRow,
 } from '@/lib/shipments/store'
+import { generateReply } from './generate'
+import type { AiConfig, ChatMessage } from './types'
 
 export interface ParsedShipmentFields {
   region: ShipmentRegion | null
@@ -57,7 +59,7 @@ const PLACEHOLDER_WORDS = new Set([
   'producto',
   'modelo',
 ])
-function isPlaceholderValue(value: string): boolean {
+export function isPlaceholderValue(value: string): boolean {
   if (/[<>]/.test(value)) return true
   return PLACEHOLDER_WORDS.has(value.trim().toLowerCase())
 }
@@ -187,6 +189,96 @@ export async function getShipmentStatusContext(
     return lines.join('; ')
   } catch (err) {
     console.error('[shipment] status context lookup failed:', err)
+    return null
+  }
+}
+
+/** What `extractShipmentFieldsFromTranscript` looks for — the fields
+ *  the shipment quick-form dialog (contact-sidebar.tsx's "Provincia"
+ *  prompt) shows, so an agent doesn't have to scroll back through the
+ *  chat by hand to find what the customer already said. */
+export interface ShipmentAutofillFields {
+  product: string | null
+  name: string | null
+  dni: string | null
+  city: string | null
+  agency: string | null
+  phone: string | null
+}
+
+/**
+ * Best-effort AI extraction of delivery data from a conversation
+ * transcript — the fallback for what the DNI regex (extractDniFallback,
+ * sale-sheet.ts) and the bot's own `[[SHIPMENT:...]]` sentinel can't
+ * reliably get on their own: a recipient name or a named agency are
+ * free text with no fixed pattern, and both are just as often given to
+ * a HUMAN agent after handoff as to the bot itself — neither of which
+ * a regex can safely parse. A single extraction call over the whole
+ * transcript, rather than per-message regex, so it reads a name/DNI/
+ * agency mentioned in any phrasing, in any message, by either party.
+ *
+ * Deliberately returns fields for the caller to offer as pre-filled
+ * form values rather than writing them to the shipments row directly —
+ * unlike the regex-based fallbacks, a model can misread a transcript,
+ * so this stays a suggestion an agent confirms in the quick-form
+ * dialog before it's saved, never a silent write.
+ */
+export async function extractShipmentFieldsFromTranscript(
+  config: AiConfig,
+  transcript: ChatMessage[],
+): Promise<ShipmentAutofillFields | null> {
+  if (transcript.length === 0) return null
+
+  const transcriptText = transcript
+    .map((m) => `${m.role === 'user' ? 'Cliente' : 'Vendedor'}: ${m.content}`)
+    .join('\n')
+
+  const systemPrompt = [
+    'You extract structured delivery data from a WhatsApp sales conversation transcript (Spanish, Peru — a business selling vehicle covers, shipping via Shalom for Provincia orders).',
+    'Read the ENTIRE transcript below and output ONLY a raw JSON object — no markdown code fences, no prose before or after — with exactly these keys: product, name, dni, city, agency, phone.',
+    '- product: the exact vehicle/product name or model that was recommended or confirmed (e.g. "Kia Seltos", "mototaxi Bajaj Torito").',
+    "- name: the recipient's full name, exactly as the customer themselves stated it — never a place, never the business's own name.",
+    '- dni: the Peruvian DNI, exactly 8 digits — never a phone number (9 digits) or any other number that happens to appear.',
+    '- city: the Peruvian city/province the order ships to (only relevant for a Provincia order).',
+    '- agency: the Shalom agency (or delivery address) the customer named — copy what they actually said, never invent or guess one.',
+    '- phone: a reference phone number, only if the customer explicitly gave one different from their own WhatsApp number.',
+    'Use null (not an empty string, not a placeholder word) for any field you cannot find with real confidence — never guess, never invent, never fabricate a plausible-looking value.',
+    '',
+    'Transcript (Cliente = customer, Vendedor = the bot or a human agent):',
+    transcriptText,
+  ].join('\n')
+
+  try {
+    const result = await generateReply({
+      config,
+      systemPrompt,
+      messages: [{ role: 'user', content: 'Devuelve el JSON ahora.' }],
+    })
+
+    const jsonText = result.text
+      .trim()
+      .replace(/^```(?:json)?/i, '')
+      .replace(/```$/, '')
+      .trim()
+    const parsed = JSON.parse(jsonText) as Record<string, unknown>
+
+    const clean = (value: unknown): string | null => {
+      if (typeof value !== 'string') return null
+      const trimmed = value.trim()
+      if (!trimmed || isPlaceholderValue(trimmed)) return null
+      return trimmed
+    }
+
+    return {
+      product: clean(parsed.product),
+      name: clean(parsed.name),
+      dni: clean(parsed.dni),
+      city: clean(parsed.city),
+      agency: clean(parsed.agency),
+      phone: clean(parsed.phone),
+    }
+  } catch (err) {
+    console.error('[shipment] AI autofill extraction failed:', err)
     return null
   }
 }

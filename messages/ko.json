@@ -589,6 +589,7 @@
     "shipmentQuickForm": {
       "title": "배송 정보 입력",
       "description": "{name}님의 주문이 지방(Provincia)으로 배송됩니다 — 아직 빠진 정보를 입력하면 발송 준비가 됩니다. AI 봇이 이미 파악한 정보는 미리 입력되어 있습니다.",
+      "autofilling": "대화 내용에서 나머지 정보를 찾는 중…",
       "later": "나중에 입력",
       "save": "저장",
       "saved": "배송 정보가 저장되었습니다",
