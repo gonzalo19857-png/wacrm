@@ -124,11 +124,16 @@ export async function pushUpdateShipment(
      *  can reuse the same "Modelo" column-write logic for an
      *  `update_shipment` action as it already does for `create_sale`. */
     modelo?: string | null
+    /** The shipment's own recipient name (`shipments.recipient_name`) —
+     *  distinct from `pushCreateSale`'s `cliente` (the buyer, set once
+     *  at sale time): the recipient is confirmed later, during delivery
+     *  data collection, and is who the "Destinatario" column tracks. */
+    nombre?: string | null
   },
 ): Promise<void> {
   const config = await loadSheetWebhook(db, accountId)
   if (!config) return
-  const { telefono, ciudad, direccion, agencia, dni, estado, modelo } = args
+  const { telefono, ciudad, direccion, agencia, dni, estado, modelo, nombre } = args
   await post(config, {
     action: 'update_shipment',
     telefono,
@@ -137,6 +142,7 @@ export async function pushUpdateShipment(
     ...(agencia ? { agencia } : {}),
     ...(dni ? { dni } : {}),
     ...(estado ? { estado } : {}),
+    ...(nombre ? { nombre } : {}),
     ...(modelo ? { modelo } : {}),
   })
 }

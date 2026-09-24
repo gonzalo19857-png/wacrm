@@ -110,6 +110,7 @@ export async function PATCH(
           agencia: shipment.agency_name,
           dni: shipment.recipient_dni,
           modelo: shipment.product,
+          nombre: shipment.recipient_name,
         })
       }
     } catch (err) {

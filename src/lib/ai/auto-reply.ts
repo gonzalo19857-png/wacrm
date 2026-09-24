@@ -295,6 +295,7 @@ export async function dispatchInboundToAiReply(
               agencia: result.row.agency_name,
               dni: result.row.recipient_dni,
               modelo: result.row.product,
+              nombre: result.row.recipient_name,
             })
           }
           if (result?.becameReady) {
