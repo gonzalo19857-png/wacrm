@@ -205,17 +205,17 @@ export async function dispatchInboundToAiReply(
     const shipmentContext = await getShipmentStatusContext(db, accountId, contactId)
 
     // The model has no other way to know the current time — the
-    // conversation history it sees carries no timestamps.
+    // conversation history it sees carries no timestamps. Passed as
+    // its own argument (not folded into the business's own prompt) so
+    // buildSystemPrompt can place it last, see its `timeHint` doc.
     const greetingHint = limaTimeHint()
-    const userPromptWithTime = config.systemPrompt
-      ? `${config.systemPrompt}\n\n${greetingHint}`
-      : greetingHint
 
     const systemPrompt = buildSystemPrompt({
-      userPrompt: userPromptWithTime,
+      userPrompt: config.systemPrompt,
       mode: 'auto_reply',
       knowledge,
       shipmentContext,
+      timeHint: greetingHint,
     })
 
     const {

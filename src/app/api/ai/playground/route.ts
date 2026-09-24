@@ -84,14 +84,14 @@ export async function POST(request: Request) {
     )
     // Same time context the live bot gets (see auto-reply.ts) — without
     // it, a Playground test can't exercise same-day delivery-slot logic
-    // that depends on the current Lima clock.
-    const userPromptWithTime = config.systemPrompt
-      ? `${config.systemPrompt}\n\n${limaTimeHint()}`
-      : limaTimeHint()
+    // that depends on the current Lima clock. Passed separately (not
+    // folded into the business's own prompt) so it lands last — see
+    // buildSystemPrompt's `timeHint` doc comment.
     const systemPrompt = buildSystemPrompt({
-      userPrompt: userPromptWithTime,
+      userPrompt: config.systemPrompt,
       mode: 'auto_reply',
       knowledge,
+      timeHint: limaTimeHint(),
     })
 
     const { text: rawText, handoff, noReply } = await generateReply({

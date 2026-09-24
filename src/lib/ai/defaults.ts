@@ -214,8 +214,20 @@ export function buildSystemPrompt(args: {
   /** One-line summary of the contact's in-progress shipment, if any —
    *  see `src/lib/ai/shipment.ts#getShipmentStatusContext`. */
   shipmentContext?: string | null
+  /** `limaTimeHint()`'s output — the real clock, including which of
+   *  today's Lima delivery slots are still open. Kept as its own
+   *  argument (never folded into `userPrompt`) specifically so it can
+   *  be pushed last, below, as the LAST thing in the whole prompt: a
+   *  live account's own business-context prompt can run past 40,000
+   *  characters, and a clock reading buried in the middle of that
+   *  competes for attention with everything around it. Observed live:
+   *  gpt-4o-mini offering a delivery slot that had already closed, and
+   *  a wrong one at that — the deterministic hint was correct, but
+   *  wasn't obeyed reliably from a mid-prompt position. Models attend
+   *  more reliably to what they read most recently, so this is that. */
+  timeHint?: string | null
 }): string {
-  const { userPrompt, mode, knowledge, shipmentContext } = args
+  const { userPrompt, mode, knowledge, shipmentContext, timeHint } = args
   const parts: string[] = [
     'You are a customer-messaging assistant for a business that uses a WhatsApp CRM. ' +
       'You are shown the recent WhatsApp conversation between the business (assistant) and a customer (user). ' +
@@ -271,6 +283,13 @@ export function buildSystemPrompt(args: {
 
   if (shipmentContext) {
     parts.push(`Current shipment on file for this contact: ${shipmentContext}`)
+  }
+
+  // Deliberately last: see the `timeHint` doc comment above.
+  if (timeHint) {
+    parts.push(
+      `IMPORTANT — the real clock, right now (this overrides any date/time assumption anything earlier in this prompt might suggest): ${timeHint}`,
+    )
   }
 
   return parts.join('\n\n')
