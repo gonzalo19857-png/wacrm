@@ -542,7 +542,7 @@
       "regionNone": "없음",
       "regionLima": "리마",
       "regionProvincia": "지방",
-      "regionHint": "배송 기록을 생성합니다 — 배송 상세 정보는 아래 배송 섹션에서 입력하세요."
+      "regionHint": "배송 기록을 생성합니다. 지방(Provincia)을 선택하면 발송에 필요한 제품 및 수령인 정보를 입력하는 창이 바로 이어서 열립니다."
     },
     "shipment": {
       "loading": "배송 정보를 불러오는 중...",
@@ -566,6 +566,7 @@
         "out_for_delivery": "배송 중으로 표시",
         "delivered": "배송 완료로 표시"
       },
+      "product": "제품 / 차량",
       "city": "도시",
       "agencyName": "대리점",
       "agencyAddress": "대리점 주소",
@@ -584,6 +585,14 @@
       "photoTooLarge": "사진이 5MB를 초과합니다",
       "photoSent": "영수증을 고객에게 보냈습니다",
       "photoSendFailed": "영수증 사진을 보내지 못했습니다"
+    },
+    "shipmentQuickForm": {
+      "title": "배송 정보 입력",
+      "description": "{name}님의 주문이 지방(Provincia)으로 배송됩니다 — 아직 빠진 정보를 입력하면 발송 준비가 됩니다. AI 봇이 이미 파악한 정보는 미리 입력되어 있습니다.",
+      "later": "나중에 입력",
+      "save": "저장",
+      "saved": "배송 정보가 저장되었습니다",
+      "saveFailed": "배송 정보를 저장하지 못했습니다"
     }
   },
   "Reports": {
@@ -1803,7 +1812,7 @@
     },
     "telegramDestinations": {
       "title": "텔레그램 수신처",
-      "description": "각각 특정 이벤트를 구독하는 텔레그램 봇을 하나 이상 등록하세요 — 예: 일반적인 \"사람이 필요할 때\" 봇과, 리마 또는 지방 배송 주문 전용 봇을 따로 둘 수 있습니다.",
+      "description": "각각 특정 이벤트를 구독하는 텔레그램 봇을 하나 이상 등록하세요 — 예: 일반적인 \"사람이 필요할 때\" 봇과, 리마 또는 지방 배송 주문 전용 봇을 따로 둘 수 있습니다. 여기에 등록한 모든 봇은 \"/resumen\" 명령에도 응답하여 오늘의 판매 현황과 정보가 빠진 진행 중인 주문을 알려줍니다.",
       "empty": "아직 등록된 텔레그램 수신처가 없습니다.",
       "event": {
         "needs_human": "사람이 필요할 때",

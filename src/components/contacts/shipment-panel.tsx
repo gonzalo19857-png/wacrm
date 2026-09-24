@@ -17,6 +17,7 @@ interface ShipmentRow {
   id: string;
   region: ShipmentRegion | null;
   status: ShipmentStatus;
+  product: string | null;
   city: string | null;
   agency_name: string | null;
   agency_address: string | null;
@@ -30,6 +31,7 @@ interface ShipmentRow {
 }
 
 type FieldKey =
+  | "product"
   | "city"
   | "agency_name"
   | "agency_address"
@@ -52,6 +54,7 @@ export function ShipmentPanel({ contactId }: { contactId: string }) {
   const [shipment, setShipment] = useState<ShipmentRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [fields, setFields] = useState<Record<FieldKey, string>>({
+    product: "",
     city: "",
     agency_name: "",
     agency_address: "",
@@ -75,6 +78,7 @@ export function ShipmentPanel({ contactId }: { contactId: string }) {
       const s = body.shipment ?? null;
       setShipment(s);
       setFields({
+        product: s?.product ?? "",
         city: s?.city ?? "",
         agency_name: s?.agency_name ?? "",
         agency_address: s?.agency_address ?? "",
@@ -195,6 +199,12 @@ export function ShipmentPanel({ contactId }: { contactId: string }) {
       </div>
 
       <div className="grid grid-cols-2 gap-2">
+        <Field
+          label={t("product")}
+          value={fields.product}
+          onChange={(v) => setFields((f) => ({ ...f, product: v }))}
+          full
+        />
         {region !== "lima" && (
           <>
             <Field label={t("city")} value={fields.city} onChange={(v) => setFields((f) => ({ ...f, city: v }))} />

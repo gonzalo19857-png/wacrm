@@ -9,6 +9,7 @@ import {
 
 export interface ParsedShipmentFields {
   region: ShipmentRegion | null
+  product: string | null
   city: string | null
   agency: string | null
   name: string | null
@@ -23,6 +24,7 @@ export interface ParsedShipmentFields {
 
 const EMPTY_FIELDS: ParsedShipmentFields = {
   region: null,
+  product: null,
   city: null,
   agency: null,
   name: null,
@@ -81,6 +83,7 @@ export function parseShipmentSentinel(raw: string): ParsedShipmentFields {
 function toPatch(fields: ParsedShipmentFields): ShipmentPatch {
   const patch: ShipmentPatch = {}
   if (fields.region) patch.region = fields.region
+  if (fields.product) patch.product = fields.product
   if (fields.city) patch.city = fields.city
   if (fields.agency) patch.agency_name = fields.agency
   if (fields.name) patch.recipient_name = fields.name
@@ -144,6 +147,7 @@ export async function getShipmentStatusContext(
     if (!row) return null
 
     const lines = [`region=${row.region ?? 'unknown'}`, `status=${row.status}`]
+    if (row.product) lines.push(`product=${row.product}`)
     if (row.city) lines.push(`city=${row.city}`)
     if (row.agency_name) lines.push(`agency=${row.agency_name}`)
     if (row.delivery_address) lines.push(`address=${row.delivery_address}`)

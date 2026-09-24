@@ -60,12 +60,13 @@ export async function POST(
 
     let shipment = await getOpenShipmentForContact(supabase, accountId, contactId)
     if (!shipment) {
-      shipment = await overwriteShipmentFields(supabase, {
+      const created = await overwriteShipmentFields(supabase, {
         accountId,
         contactId,
         createdBy: userId,
         patch: {},
       })
+      shipment = created?.row ?? null
     }
     if (shipment) {
       const patch: Record<string, unknown> = { receipt_photo_url: mediaUrl }

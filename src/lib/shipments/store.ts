@@ -15,6 +15,7 @@ export interface ShipmentRow {
   contact_id: string
   sale_id: string | null
   region: ShipmentRegion | null
+  product: string | null
   city: string | null
   agency_name: string | null
   agency_address: string | null
@@ -38,6 +39,7 @@ export type ShipmentPatch = Partial<
   Pick<
     ShipmentRow,
     | 'region'
+    | 'product'
     | 'city'
     | 'agency_name'
     | 'agency_address'
@@ -51,7 +53,7 @@ export type ShipmentPatch = Partial<
 >
 
 const SELECT_COLUMNS =
-  'id, account_id, contact_id, sale_id, region, city, agency_name, agency_address, ' +
+  'id, account_id, contact_id, sale_id, region, product, city, agency_name, agency_address, ' +
   'delivery_address, delivery_reference, recipient_name, recipient_dni, recipient_phone, ' +
   'receipt_photo_url, notes, status, created_at, updated_at'
 
@@ -78,9 +80,12 @@ export async function getOpenShipmentForContact(
 }
 
 /** True once a shipment has everything needed to actually be handed
- *  to Shalom (Provincia) or a courier (Lima). */
+ *  to Shalom (Provincia) or a courier (Lima) — including the product,
+ *  so dispatch never receives a "ready" order without knowing what to
+ *  pack. */
 export function isShipmentReady(row: {
   region: ShipmentRegion | null
+  product: string | null
   city: string | null
   agency_name: string | null
   delivery_address: string | null
@@ -88,6 +93,7 @@ export function isShipmentReady(row: {
   recipient_dni: string | null
   recipient_phone: string | null
 }): boolean {
+  if (!row.product) return false
   if (row.region === 'provincia') {
     return !!(
       row.city && row.agency_name && row.recipient_name && row.recipient_dni && row.recipient_phone
@@ -97,6 +103,38 @@ export function isShipmentReady(row: {
     return !!(row.delivery_address && row.recipient_name && row.recipient_phone)
   }
   return false
+}
+
+/** Which of `isShipmentReady`'s required fields (for the shipment's
+ *  own region) are still missing — used by the daily Telegram
+ *  "/resumen" digest to name exactly what's blocking each open order,
+ *  and by the sale-tag quick-form dialog to know what to ask for. */
+export function missingShipmentFields(row: {
+  region: ShipmentRegion | null
+  product: string | null
+  city: string | null
+  agency_name: string | null
+  delivery_address: string | null
+  recipient_name: string | null
+  recipient_dni: string | null
+  recipient_phone: string | null
+}): string[] {
+  const missing: string[] = []
+  if (!row.product) missing.push('producto')
+  if (row.region === 'provincia') {
+    if (!row.city) missing.push('ciudad')
+    if (!row.agency_name) missing.push('agencia')
+    if (!row.recipient_name) missing.push('nombre')
+    if (!row.recipient_dni) missing.push('DNI')
+    if (!row.recipient_phone) missing.push('teléfono')
+  } else if (row.region === 'lima') {
+    if (!row.delivery_address) missing.push('dirección')
+    if (!row.recipient_name) missing.push('nombre')
+    if (!row.recipient_phone) missing.push('teléfono')
+  } else {
+    missing.push('región')
+  }
+  return missing
 }
 
 /**
@@ -189,6 +227,11 @@ export async function mergeShipmentFields(
  * `patch` (e.g. correcting a DNI the bot mis-heard) — unlike
  * `mergeShipmentFields`, this always writes the given value.
  * Creates the shipment if the contact has none open yet.
+ *
+ * Also reports `becameReady`, same contract as `mergeShipmentFields` —
+ * an agent finishing the shipment panel/quick-form dialog by hand is
+ * just as valid a "ready to pack" moment as the bot's own sentinel
+ * completing it, so both paths must fire the Telegram alert.
  */
 export async function overwriteShipmentFields(
   db: SupabaseClient,
@@ -200,7 +243,7 @@ export async function overwriteShipmentFields(
     createdBy?: string | null
     patch: ShipmentPatch
   },
-): Promise<ShipmentRow | null> {
+): Promise<{ row: ShipmentRow; becameReady: boolean } | null> {
   const { accountId, contactId, shipmentId, saleId, createdBy, patch } = args
 
   let target: ShipmentRow | null = null
@@ -225,6 +268,9 @@ export async function overwriteShipmentFields(
       ...patch,
     }
     if (saleId) insertRow.sale_id = saleId
+    if (isShipmentReady({ region: patch.region ?? null, product: patch.product ?? null, ...patch } as ShipmentRow)) {
+      insertRow.status = 'ready'
+    }
     const { data, error } = await db
       .from('shipments')
       .insert(insertRow)
@@ -234,12 +280,18 @@ export async function overwriteShipmentFields(
       console.error('[shipments] create (overwrite) failed:', error)
       return null
     }
-    return data as unknown as ShipmentRow
+    const row = data as unknown as ShipmentRow
+    return { row, becameReady: row.status === 'ready' }
   }
 
   const update: Record<string, unknown> = { ...patch }
   if (saleId && !target.sale_id) update.sale_id = saleId
-  if (Object.keys(update).length === 0) return target
+  const wasReady = target.status !== 'collecting'
+  const merged = { ...target, ...update } as ShipmentRow
+  if (!wasReady && isShipmentReady(merged)) {
+    update.status = 'ready'
+  }
+  if (Object.keys(update).length === 0) return { row: target, becameReady: false }
 
   const { data, error } = await db
     .from('shipments')
@@ -251,7 +303,8 @@ export async function overwriteShipmentFields(
     console.error('[shipments] overwrite failed:', error)
     return null
   }
-  return data as unknown as ShipmentRow
+  const row = data as unknown as ShipmentRow
+  return { row, becameReady: !wasReady && row.status === 'ready' }
 }
 
 const NEXT_STATUS_BY_REGION: Record<ShipmentRegion, ShipmentStatus[]> = {

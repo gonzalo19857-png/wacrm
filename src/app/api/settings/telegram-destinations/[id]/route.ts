@@ -1,8 +1,30 @@
+import { randomBytes } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { encrypt } from '@/lib/whatsapp/encryption'
-import { validateTelegramBotToken } from '@/lib/telegram/send'
+import { setTelegramCommands, setTelegramWebhook, validateTelegramBotToken } from '@/lib/telegram/send'
 import type { TelegramEventKey } from '@/lib/telegram/destinations'
+
+const BOT_COMMANDS = [{ command: 'resumen', description: 'Resumen de pedidos y ventas del día' }]
+
+/** Same best-effort webhook (re-)registration as the create route —
+ *  needed here too because a new bot token means a brand-new bot with
+ *  no webhook of its own yet. */
+async function registerWebhook(destinationId: string, botToken: string, secret: string): Promise<void> {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/+$/, '')
+  if (!siteUrl) return
+  try {
+    const url = `${siteUrl}/api/telegram/webhook/${destinationId}`
+    const result = await setTelegramWebhook(botToken, url, secret)
+    if (!result.ok) {
+      console.error(`[telegram-destinations] webhook registration failed for ${destinationId}: ${result.error}`)
+      return
+    }
+    await setTelegramCommands(botToken, BOT_COMMANDS)
+  } catch (err) {
+    console.error(`[telegram-destinations] webhook registration threw for ${destinationId}:`, err)
+  }
+}
 
 const EVENT_KEYS: TelegramEventKey[] = [
   'needs_human',
@@ -55,14 +77,28 @@ export async function PATCH(
     if ('is_active' in body) {
       update.is_active = body.is_active === true
     }
+    let rotatedToken: string | null = null
     if (typeof body.bot_token === 'string' && body.bot_token.trim()) {
       const botToken = body.bot_token.trim()
       const validation = await validateTelegramBotToken(botToken)
       if (!validation.ok) return bad(`Telegram bot token: ${validation.error}`)
       update.bot_token = encrypt(botToken)
+      rotatedToken = botToken
     }
 
     if (Object.keys(update).length === 0) return NextResponse.json({ ok: true })
+
+    if (rotatedToken) {
+      const { data: existing } = await supabase
+        .from('telegram_destinations')
+        .select('webhook_secret')
+        .eq('id', id)
+        .eq('account_id', accountId)
+        .maybeSingle()
+      const secret = existing?.webhook_secret ?? randomBytes(24).toString('base64url')
+      if (!existing?.webhook_secret) update.webhook_secret = secret
+      await registerWebhook(id, rotatedToken, secret)
+    }
 
     const { error } = await supabase
       .from('telegram_destinations')

@@ -9,6 +9,7 @@ import { addContactTag, deleteContactTag } from "@/lib/contacts/tag-api";
 import { avatarColorFor } from "@/lib/avatar-color";
 import { SalePriceDialog, type SaleRegion } from "@/components/contacts/sale-price-dialog";
 import { ShipmentPanel } from "@/components/contacts/shipment-panel";
+import { ShipmentQuickFormDialog } from "@/components/contacts/shipment-quick-form-dialog";
 import { toast } from "sonner";
 import {
   Phone,
@@ -68,6 +69,14 @@ export function ContactSidebar({ contact, onContactUpdated }: ContactSidebarProp
   // opens the price prompt instead of adding the tag immediately.
   const [salePrompt, setSalePrompt] = useState<{ id: string; name: string } | null>(null);
   const [savingSale, setSavingSale] = useState(false);
+  // Opened right after a "Venta" tag is confirmed with region ===
+  // "provincia" — the focused product/recipient/agency prompt the
+  // business asked for instead of relying on the collapsed shipment
+  // panel being filled in later.
+  const [shipmentPrompt, setShipmentPrompt] = useState(false);
+  // Bumped whenever the quick-form dialog saves, so the ShipmentPanel
+  // below (which owns its own fetch) remounts and picks up the change.
+  const [shipmentRefreshKey, setShipmentRefreshKey] = useState(0);
   // Inline price edit on an existing sale row — id of the row being
   // edited (null when none) plus its draft value.
   const [editingSaleId, setEditingSaleId] = useState<string | null>(null);
@@ -193,6 +202,7 @@ export function ContactSidebar({ contact, onContactUpdated }: ContactSidebarProp
         setSalePrompt(null);
         if (result.saleId) {
           toast.success(tSaleTag("toastSuccess"));
+          if (region === "provincia") setShipmentPrompt(true);
         } else {
           toast.error(tSaleTag("toastFailed"));
         }
@@ -583,7 +593,12 @@ export function ContactSidebar({ contact, onContactUpdated }: ContactSidebarProp
               {tSidebar("shipment")}
             </div>
             <div className="mt-2">
-              {contact && <ShipmentPanel contactId={contact.id} />}
+              {contact && (
+                <ShipmentPanel
+                  key={`${contact.id}-${shipmentRefreshKey}`}
+                  contactId={contact.id}
+                />
+              )}
             </div>
           </div>
 
@@ -646,6 +661,19 @@ export function ContactSidebar({ contact, onContactUpdated }: ContactSidebarProp
           currency={defaultCurrency}
           saving={savingSale}
           onConfirm={handleConfirmSalePrice}
+        />
+      )}
+
+      {shipmentPrompt && contact && (
+        <ShipmentQuickFormDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setShipmentPrompt(false);
+          }}
+          contactId={contact.id}
+          contactName={displayName}
+          contactPhone={contact.phone ?? null}
+          onSaved={() => setShipmentRefreshKey((k) => k + 1)}
         />
       )}
     </div>

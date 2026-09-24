@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { pushCreateSale, extractVehicleModel } from './sale-sheet';
+import { mergeShipmentFields } from '@/lib/shipments/store';
 
 /**
  * Registers a sale for a contact that just got a "sale tag" (migration
@@ -76,6 +77,26 @@ export async function createSale(
           .map((m: { content_text: string | null }) => m.content_text)
           .filter((t: string | null): t is string => !!t);
         modelo = extractVehicleModel(texts);
+      }
+
+      // Best-effort: seed the shipment record's `product` (migration
+      // 066) with the same model the bot's own reply already named,
+      // so dispatch never sees a "ready" order without knowing what
+      // to pack — even when the bot never emitted a SHIPMENT sentinel
+      // with product= itself. `onlyFillBlanks` (mergeShipmentFields'
+      // default behavior) never overwrites a value already set.
+      if (modelo !== 'UNFOUND') {
+        try {
+          await mergeShipmentFields(db, {
+            accountId,
+            contactId,
+            saleId: sale.id,
+            createdBy: userId,
+            patch: { product: modelo },
+          });
+        } catch (err) {
+          console.error('[sale-tag] shipment product fill failed:', err);
+        }
       }
 
       await pushCreateSale(db, accountId, {

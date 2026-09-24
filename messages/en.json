@@ -542,7 +542,7 @@
       "regionNone": "None",
       "regionLima": "Lima",
       "regionProvincia": "Provincia",
-      "regionHint": "Sets up the shipment record — see the Shipment section below to fill in the delivery details."
+      "regionHint": "Sets up the shipment record. Picking Provincia opens a follow-up prompt for the product and recipient details dispatch needs."
     },
     "shipment": {
       "loading": "Loading shipment...",
@@ -566,6 +566,7 @@
         "out_for_delivery": "Mark out for delivery",
         "delivered": "Mark delivered"
       },
+      "product": "Product / vehicle",
       "city": "City",
       "agencyName": "Agency",
       "agencyAddress": "Agency address",
@@ -584,6 +585,14 @@
       "photoTooLarge": "That photo is over 5 MB",
       "photoSent": "Receipt sent to the customer",
       "photoSendFailed": "Couldn't send the receipt photo"
+    },
+    "shipmentQuickForm": {
+      "title": "Complete the delivery details",
+      "description": "{name}'s order is shipping to Provincia — fill in whatever's still missing so dispatch can pack it. Anything the AI bot already picked up is pre-filled below.",
+      "later": "Fill in later",
+      "save": "Save",
+      "saved": "Delivery details saved",
+      "saveFailed": "Couldn't save the delivery details"
     }
   },
   "Reports": {
@@ -1803,7 +1812,7 @@
     },
     "telegramDestinations": {
       "title": "Telegram destinations",
-      "description": "Register one or more Telegram bots, each subscribed to a specific event — e.g. a generic \"needs a human\" bot, plus a separate one just for orders shipping to Lima or to Provincia.",
+      "description": "Register one or more Telegram bots, each subscribed to a specific event — e.g. a generic \"needs a human\" bot, plus a separate one just for orders shipping to Lima or to Provincia. Every bot registered here also answers \"/resumen\" with today's sales and which open orders are still missing data.",
       "empty": "No Telegram destinations yet.",
       "event": {
         "needs_human": "Needs a human",

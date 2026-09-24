@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
 import { SalePriceDialog, type SaleRegion } from '@/components/contacts/sale-price-dialog';
+import { ShipmentQuickFormDialog } from '@/components/contacts/shipment-quick-form-dialog';
 import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency } from '@/lib/currency';
 import { toast } from 'sonner';
@@ -87,6 +88,9 @@ export function ContactDetailView({
   // opens the price prompt instead of toggling the tag immediately.
   const [salePrompt, setSalePrompt] = useState<{ id: string; name: string } | null>(null);
   const [savingSale, setSavingSale] = useState(false);
+  // Opened right after a "Venta" tag is confirmed with region ===
+  // "provincia" — mirrors contact-sidebar.tsx's inbox-side prompt.
+  const [shipmentPrompt, setShipmentPrompt] = useState(false);
 
   // Notes tab
   const [notes, setNotes] = useState<ContactNote[]>([]);
@@ -287,6 +291,7 @@ export function ContactDetailView({
       setSalePrompt(null);
       if (result.saleId) {
         toast.success(tSaleTag('toastSuccess'));
+        if (region === 'provincia') setShipmentPrompt(true);
       } else {
         toast.error(tSaleTag('toastFailed'));
       }
@@ -889,6 +894,17 @@ export function ContactDetailView({
         currency={defaultCurrency}
         saving={savingSale}
         onConfirm={confirmSalePrice}
+      />
+    )}
+    {shipmentPrompt && contactId && (
+      <ShipmentQuickFormDialog
+        open
+        onOpenChange={(next) => {
+          if (!next) setShipmentPrompt(false);
+        }}
+        contactId={contactId}
+        contactName={contact?.name || contact?.phone || ''}
+        contactPhone={contact?.phone ?? null}
       />
     )}
     </>

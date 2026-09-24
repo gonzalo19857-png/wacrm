@@ -186,6 +186,7 @@ export async function sendShipmentReadyTelegramAlert(
     contactId: string
     shipment: {
       region: string | null
+      product: string | null
       city: string | null
       agencyName: string | null
       deliveryAddress: string | null
@@ -217,7 +218,8 @@ export async function sendShipmentReadyTelegramAlert(
 
     const text =
       `📦 Envío listo para despachar\n\n` +
-      `Contacto: ${who}\n${destinationLine}\n` +
+      `Contacto: ${who}\n` +
+      `Producto: ${shipment.product ?? '-'}\n${destinationLine}\n` +
       `Destinatario: ${shipment.recipientName ?? '-'} — DNI ${shipment.recipientDni ?? '-'} — Tel ${shipment.recipientPhone ?? '-'}` +
       link
 

@@ -1,8 +1,35 @@
+import { randomBytes } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { getCurrentAccount, requireRole, toErrorResponse } from '@/lib/auth/account'
 import { encrypt } from '@/lib/whatsapp/encryption'
-import { validateTelegramBotToken } from '@/lib/telegram/send'
+import { setTelegramCommands, setTelegramWebhook, validateTelegramBotToken } from '@/lib/telegram/send'
 import type { TelegramEventKey } from '@/lib/telegram/destinations'
+
+/** Slash commands registered on every bot we create a webhook for —
+ *  just "/resumen" for now (migration 066). */
+const BOT_COMMANDS = [{ command: 'resumen', description: 'Resumen de pedidos y ventas del día' }]
+
+/**
+ * Best-effort: points the new destination's bot at our webhook route
+ * and registers its "/resumen" slash command. Requires a public HTTPS
+ * site URL (unset in local dev), so it's silently skipped there — the
+ * destination still saves and works for outbound alerts either way.
+ */
+async function registerWebhook(destinationId: string, botToken: string, secret: string): Promise<void> {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/+$/, '')
+  if (!siteUrl) return
+  try {
+    const url = `${siteUrl}/api/telegram/webhook/${destinationId}`
+    const result = await setTelegramWebhook(botToken, url, secret)
+    if (!result.ok) {
+      console.error(`[telegram-destinations] webhook registration failed for ${destinationId}: ${result.error}`)
+      return
+    }
+    await setTelegramCommands(botToken, BOT_COMMANDS)
+  } catch (err) {
+    console.error(`[telegram-destinations] webhook registration threw for ${destinationId}:`, err)
+  }
+}
 
 const EVENT_KEYS: TelegramEventKey[] = [
   'needs_human',
@@ -69,6 +96,8 @@ export async function POST(request: Request) {
     const validation = await validateTelegramBotToken(botToken)
     if (!validation.ok) return bad(`Telegram bot token: ${validation.error}`)
 
+    const webhookSecret = randomBytes(24).toString('base64url')
+
     const { data, error } = await supabase
       .from('telegram_destinations')
       .insert({
@@ -78,6 +107,7 @@ export async function POST(request: Request) {
         chat_id: chatId,
         event_key: eventKey,
         is_active: body.is_active !== false,
+        webhook_secret: webhookSecret,
       })
       .select('id, label, chat_id, event_key, is_active, created_at')
       .single()
@@ -86,6 +116,9 @@ export async function POST(request: Request) {
       console.error('[settings/telegram-destinations POST] error:', error)
       return NextResponse.json({ error: 'Failed to create the Telegram destination' }, { status: 500 })
     }
+
+    await registerWebhook(data.id, botToken, webhookSecret)
+
     return NextResponse.json({ destination: data }, { status: 201 })
   } catch (err) {
     return toErrorResponse(err)

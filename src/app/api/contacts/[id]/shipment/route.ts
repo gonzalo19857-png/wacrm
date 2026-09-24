@@ -6,6 +6,7 @@ import {
   type ShipmentPatch,
 } from '@/lib/shipments/store'
 import { pushUpdateShipment } from '@/lib/contacts/sale-sheet'
+import { sendShipmentReadyTelegramAlert } from '@/lib/ai/handoff'
 
 function bad(message: string) {
   return NextResponse.json({ error: message }, { status: 400 })
@@ -34,6 +35,7 @@ export async function GET(
 }
 
 const TEXT_FIELDS = [
+  'product',
   'city',
   'agency_name',
   'agency_address',
@@ -81,7 +83,7 @@ export async function PATCH(
     const shipmentId = typeof body.shipment_id === 'string' ? body.shipment_id : null
     const saleId = typeof body.sale_id === 'string' ? body.sale_id : null
 
-    const shipment = await overwriteShipmentFields(supabase, {
+    const result = await overwriteShipmentFields(supabase, {
       accountId,
       contactId,
       shipmentId,
@@ -89,9 +91,10 @@ export async function PATCH(
       createdBy: userId,
       patch,
     })
-    if (!shipment) {
+    if (!result) {
       return NextResponse.json({ error: 'Failed to save the shipment' }, { status: 500 })
     }
+    const { row: shipment, becameReady } = result
 
     try {
       const { data: patchContact } = await supabase
@@ -110,6 +113,28 @@ export async function PATCH(
       }
     } catch (err) {
       console.error('[shipment PATCH] sheet push failed:', err)
+    }
+
+    if (becameReady) {
+      try {
+        await sendShipmentReadyTelegramAlert(supabase, {
+          accountId,
+          contactId,
+          shipment: {
+            region: shipment.region,
+            product: shipment.product,
+            city: shipment.city,
+            agencyName: shipment.agency_name,
+            deliveryAddress: shipment.delivery_address,
+            deliveryReference: shipment.delivery_reference,
+            recipientName: shipment.recipient_name,
+            recipientDni: shipment.recipient_dni,
+            recipientPhone: shipment.recipient_phone,
+          },
+        })
+      } catch (err) {
+        console.error('[shipment PATCH] Telegram alert failed:', err)
+      }
     }
 
     return NextResponse.json({ shipment })

@@ -288,6 +288,7 @@ export async function dispatchInboundToAiReply(
             contactId,
             shipment: {
               region: result.row.region,
+              product: result.row.product,
               city: result.row.city,
               agencyName: result.row.agency_name,
               deliveryAddress: result.row.delivery_address,

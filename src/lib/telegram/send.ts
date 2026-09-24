@@ -45,6 +45,68 @@ export async function validateTelegramBotToken(
   }
 }
 
+/**
+ * Points a bot's webhook at our `/api/telegram/webhook/[destinationId]`
+ * route (migration 066) so it can receive messages, not just send
+ * them — used for the "/resumen" daily digest command. `secretToken`
+ * is echoed back by Telegram on every call as the
+ * `X-Telegram-Bot-Api-Secret-Token` header, which the webhook route
+ * checks before trusting a request. Best-effort by design (callers
+ * swallow the result) — a registration failure just means `/resumen`
+ * won't work yet, never something that should block saving the
+ * destination.
+ */
+export async function setTelegramWebhook(
+  botToken: string,
+  url: string,
+  secretToken: string,
+): Promise<TelegramSendResult> {
+  try {
+    const res = await fetch(`${TELEGRAM_API_BASE}/bot${botToken}/setWebhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, secret_token: secretToken }),
+    })
+    const data = await res.json().catch(() => null)
+    if (!res.ok || !data?.ok) {
+      return { ok: false, error: data?.description ?? `Telegram API returned ${res.status}` }
+    }
+    return { ok: true }
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Network error reaching Telegram',
+    }
+  }
+}
+
+/** Registers the bot's slash-command menu (the "/" tap-to-fill list in
+ *  Telegram's own UI) — how the "/resumen" command shows up as a
+ *  one-tap option instead of something the agent has to remember to
+ *  type. */
+export async function setTelegramCommands(
+  botToken: string,
+  commands: { command: string; description: string }[],
+): Promise<TelegramSendResult> {
+  try {
+    const res = await fetch(`${TELEGRAM_API_BASE}/bot${botToken}/setMyCommands`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ commands }),
+    })
+    const data = await res.json().catch(() => null)
+    if (!res.ok || !data?.ok) {
+      return { ok: false, error: data?.description ?? `Telegram API returned ${res.status}` }
+    }
+    return { ok: true }
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Network error reaching Telegram',
+    }
+  }
+}
+
 export async function sendTelegramMessage(
   botToken: string,
   chatId: string,

@@ -6,10 +6,11 @@ describe('parseShipmentSentinel', () => {
   it('parses every known key', () => {
     expect(
       parseShipmentSentinel(
-        'region=provincia;city=Arequipa;agency=Shalom Mercaderes;name=Juan Perez;dni=12345678;phone=987654321;address=Av. Siempre Viva 123;reference=frente al parque;notes=Turno tarde 2-4pm',
+        'region=provincia;product=Mototaxi Bajaj 200;city=Arequipa;agency=Shalom Mercaderes;name=Juan Perez;dni=12345678;phone=987654321;address=Av. Siempre Viva 123;reference=frente al parque;notes=Turno tarde 2-4pm',
       ),
     ).toEqual({
       region: 'provincia',
+      product: 'Mototaxi Bajaj 200',
       city: 'Arequipa',
       agency: 'Shalom Mercaderes',
       name: 'Juan Perez',
@@ -29,6 +30,7 @@ describe('parseShipmentSentinel', () => {
   it('leaves fields not present as null', () => {
     expect(parseShipmentSentinel('name=Juan')).toEqual({
       region: null,
+      product: null,
       city: null,
       agency: null,
       name: 'Juan',
@@ -43,6 +45,7 @@ describe('parseShipmentSentinel', () => {
   it('ignores unknown keys and malformed pairs', () => {
     expect(parseShipmentSentinel('foo=bar;name=Juan;noequalsign;=blank')).toEqual({
       region: null,
+      product: null,
       city: null,
       agency: null,
       name: 'Juan',
@@ -90,6 +93,7 @@ describe('parseShipmentSentinel', () => {
 describe('isShipmentReady', () => {
   const provinceOrder = {
     region: 'provincia' as const,
+    product: 'Mototaxi Bajaj 200',
     city: 'Sullana',
     agency_name: 'Shalom Zona Industrial',
     delivery_address: null,
@@ -104,5 +108,9 @@ describe('isShipmentReady', () => {
 
   it('marks a Provincia order ready only with its required data', () => {
     expect(isShipmentReady(provinceOrder)).toBe(true)
+  })
+
+  it('does not mark an order ready without a product', () => {
+    expect(isShipmentReady({ ...provinceOrder, product: null })).toBe(false)
   })
 })
