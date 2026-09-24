@@ -109,6 +109,7 @@ export async function PATCH(
           direccion: shipment.delivery_address,
           agencia: shipment.agency_name,
           dni: shipment.recipient_dni,
+          modelo: shipment.product,
         })
       }
     } catch (err) {
