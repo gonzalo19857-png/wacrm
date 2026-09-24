@@ -85,6 +85,17 @@ describe('parseShipmentSentinel', () => {
     expect(parseShipmentSentinel('city=Trujillo;name=Trujillo').name).toBeNull()
   })
 
+  it('drops a literal unfilled placeholder instead of storing it', () => {
+    // Regression: the model echoed its own prompt's illustrative
+    // sentinel syntax (`name=<nombre completo>`) verbatim instead of
+    // substituting a real value, and it landed in the shipments table
+    // as the literal string "<nombre>".
+    expect(parseShipmentSentinel('name=<nombre>;dni=<dni>').name).toBeNull()
+    expect(parseShipmentSentinel('name=<nombre>;dni=<dni>').dni).toBeNull()
+    expect(parseShipmentSentinel('city=<ciudad>').city).toBeNull()
+    expect(parseShipmentSentinel('agency=agencia').agency).toBeNull()
+  })
+
   it('keeps a normal name untouched', () => {
     expect(parseShipmentSentinel('city=Piura;name=Carlos Castillo').name).toBe('Carlos Castillo')
   })

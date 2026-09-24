@@ -35,6 +35,33 @@ const EMPTY_FIELDS: ParsedShipmentFields = {
   notes: null,
 }
 
+/** Values that are clearly an unfilled template placeholder rather than
+ *  real customer data, rather than a value the model actually learned —
+ *  e.g. the model echoing its own prompt's illustrative sentinel syntax
+ *  (`name=<nombre completo>`, `dni=<dni>`) literally instead of
+ *  substituting a real value. Seen live: `name=<nombre>` landing in the
+ *  shipments table as the literal four-character string. Checked
+ *  against every field, not just `name` — the same failure mode can
+ *  hit any of them. */
+const PLACEHOLDER_WORDS = new Set([
+  'nombre',
+  'nombre completo',
+  'dni',
+  'ciudad',
+  'agencia',
+  'direccion',
+  'dirección',
+  'telefono',
+  'teléfono',
+  'referencia',
+  'producto',
+  'modelo',
+])
+function isPlaceholderValue(value: string): boolean {
+  if (/[<>]/.test(value)) return true
+  return PLACEHOLDER_WORDS.has(value.trim().toLowerCase())
+}
+
 /**
  * Parse the raw contents of a `[[SHIPMENT:...]]` sentinel (see
  * defaults.ts) — `key=value` pairs separated by `;`, e.g.
@@ -58,6 +85,7 @@ export function parseShipmentSentinel(raw: string): ParsedShipmentFields {
       continue
     }
     if (key in fields) {
+      if (isPlaceholderValue(value)) continue
       ;(fields as unknown as Record<string, string | null>)[key] = value
     }
   }

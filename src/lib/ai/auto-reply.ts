@@ -256,60 +256,71 @@ export async function dispatchInboundToAiReply(
     const text = channel === 'whatsapp' ? enforceWhatsAppEmphasis(namedText) : namedText
 
     // Persist any delivery data the model gathered this turn (migration
-    // 052) — independent of noReply/handoff below, since a Lima order
-    // typically hands off right after the sentinel that completes it.
-    // Best-effort: a persistence failure must never affect the send.
-    if (shipmentRaw) {
-      try {
-        const fields = parseShipmentSentinel(shipmentRaw)
-        const { data: shipmentContact } = await db
-          .from('contacts')
-          .select('phone')
-          .eq('id', contactId)
-          .maybeSingle()
-        const result = await upsertShipmentFromSentinel(db, {
-          accountId,
-          contactId,
-          fields,
-          contactPhone: shipmentContact?.phone ?? null,
-        })
-        if (result?.row && shipmentContact?.phone) {
-          await pushUpdateShipment(db, accountId, {
-            telefono: shipmentContact.phone,
-            ciudad: result.row.city,
-            direccion: result.row.delivery_address,
-            agencia: result.row.agency_name,
-            dni: result.row.recipient_dni,
-          })
-        }
-        if (result?.becameReady) {
-          await sendShipmentReadyTelegramAlert(db, {
+    // 052), plus the "Potencial" auto-tag (migration 064) — independent
+    // of noReply/handoff below, since a Lima order typically hands off
+    // right after the sentinel that completes it. Best-effort: a
+    // persistence failure must never affect the send.
+    //
+    // Deliberately NOT run inline here: both of these involve outbound
+    // network calls this account doesn't control the speed of — the
+    // Google Sheet webhook (Apps Script, notoriously slow to wake from
+    // cold) and, once a shipment becomes ready, Telegram. Awaiting them
+    // before the customer's own WhatsApp reply is sent (below) means a
+    // slow/hung Sheet or Telegram call directly delays the message the
+    // customer is actually waiting for — worst of all on exactly the
+    // turns this fires on, since that's every turn the bot is
+    // collecting delivery data. Called after the send instead (still
+    // awaited, never detached — this function's own caller keeps it
+    // alive either way, so nothing here gets dropped).
+    const persistSideEffects = async () => {
+      if (shipmentRaw) {
+        try {
+          const fields = parseShipmentSentinel(shipmentRaw)
+          const { data: shipmentContact } = await db
+            .from('contacts')
+            .select('phone')
+            .eq('id', contactId)
+            .maybeSingle()
+          const result = await upsertShipmentFromSentinel(db, {
             accountId,
             contactId,
-            shipment: {
-              region: result.row.region,
-              product: result.row.product,
-              city: result.row.city,
-              agencyName: result.row.agency_name,
-              deliveryAddress: result.row.delivery_address,
-              deliveryReference: result.row.delivery_reference,
-              recipientName: result.row.recipient_name,
-              recipientDni: result.row.recipient_dni,
-              recipientPhone: result.row.recipient_phone,
-            },
+            fields,
+            contactPhone: shipmentContact?.phone ?? null,
           })
+          if (result?.row && shipmentContact?.phone) {
+            await pushUpdateShipment(db, accountId, {
+              telefono: shipmentContact.phone,
+              ciudad: result.row.city,
+              direccion: result.row.delivery_address,
+              agencia: result.row.agency_name,
+              dni: result.row.recipient_dni,
+            })
+          }
+          if (result?.becameReady) {
+            await sendShipmentReadyTelegramAlert(db, {
+              accountId,
+              contactId,
+              shipment: {
+                region: result.row.region,
+                product: result.row.product,
+                city: result.row.city,
+                agencyName: result.row.agency_name,
+                deliveryAddress: result.row.delivery_address,
+                deliveryReference: result.row.delivery_reference,
+                recipientName: result.row.recipient_name,
+                recipientDni: result.row.recipient_dni,
+                recipientPhone: result.row.recipient_phone,
+              },
+            })
+          }
+        } catch (err) {
+          console.error('[ai auto-reply] shipment sentinel persist failed:', err)
         }
-      } catch (err) {
-        console.error('[ai auto-reply] shipment sentinel persist failed:', err)
       }
-    }
 
-    // Auto-tag the contact "Potencial" the moment the bot has told
-    // them the payment methods (migration 064) — independent of
-    // noReply/handoff below, same reasoning as the shipment persist
-    // above: the sentinel reflects what was said this turn either way.
-    if (reachedPaymentInfo) {
-      await applyPotentialTag(db, accountId, contactId)
+      if (reachedPaymentInfo) {
+        await applyPotentialTag(db, accountId, contactId)
+      }
     }
 
     // Record token spend on the account's BYO key. Fire-and-forget so it
@@ -331,7 +342,10 @@ export async function dispatchInboundToAiReply(
       // customer closed out with no new question) — no message, no
       // human handoff, no auto-reply state change. Unlike a handoff,
       // the bot stays fully active for whatever the customer sends
-      // next, so there's nothing else to do here.
+      // next, so there's nothing else to do here. No customer-facing
+      // send on this path, so there's no send to delay — order doesn't
+      // matter, but run it before returning either way.
+      await persistSideEffects()
       return
     }
 
@@ -357,6 +371,11 @@ export async function dispatchInboundToAiReply(
         update.assigned_agent_id = config.handoffAgentId
       }
       await db.from('conversations').update(update).eq('id', conversationId)
+
+      // No customer-facing WhatsApp send happens on this path either
+      // (only the internal Telegram alert below), so there's nothing
+      // for this to delay.
+      await persistSideEffects()
 
       // Awaited, not fire-and-forget — see notifyNeedsHuman above. The
       // handoff state itself is already persisted at this point either
@@ -398,7 +417,13 @@ export async function dispatchInboundToAiReply(
       console.error('[ai auto-reply] claim_ai_reply_for_latest_inbound failed:', claimErr)
       return
     }
-    if (claimed !== true) return // lost the per-conversation cap race
+    if (claimed !== true) {
+      // Lost the per-conversation cap race — another invocation is
+      // sending the reply, but the shipment data this invocation's own
+      // model call gathered is still real and still worth keeping.
+      await persistSideEffects()
+      return
+    }
 
     const sendText = () =>
       channel === 'messenger'
@@ -468,6 +493,11 @@ export async function dispatchInboundToAiReply(
     } else {
       await sendText()
     }
+
+    // Customer already has their reply at this point — now do the
+    // slower best-effort bookkeeping (Google Sheet push, Telegram
+    // alert, Potencial tag) without making them wait for it.
+    await persistSideEffects()
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)
   }

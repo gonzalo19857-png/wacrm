@@ -160,3 +160,38 @@ export function extractVehicleModel(botMessages: string[]): string {
   }
   return 'UNFOUND'
 }
+
+/** A Peruvian DNI is always exactly 8 digits — bounded so a longer run
+ *  (a 9-digit phone number, an order id) never matches part of itself. */
+const DNI_RUN = /(?<!\d)(\d{8})(?!\d)/
+
+/**
+ * Best-effort fallback extraction of a DNI directly from what the
+ * customer typed — a backstop for when a human agent collected it in
+ * plain WhatsApp chat instead of the AI bot's own `[[SHIPMENT:...]]`
+ * sentinel, which only ever fires while the bot itself is generating
+ * the reply. Without this, a DNI the customer already gave a human
+ * agent has to be re-read from the chat and retyped by hand into the
+ * shipment panel/quick-form dialog — exactly the slow, error-prone
+ * step that lets orders sit incomplete.
+ *
+ * Prefers a message that actually mentions "DNI" (far fewer false
+ * positives than a bare 8-digit run, which could coincidentally be
+ * something else); falls back to any standalone 8-digit token only if
+ * no message mentions the word. Returns null — never a guess — when
+ * nothing matches.
+ */
+export function extractDniFallback(customerMessages: string[]): string | null {
+  const recent = [...customerMessages].reverse()
+  for (const text of recent) {
+    if (/\bdni\b/i.test(text)) {
+      const match = text.match(DNI_RUN)
+      if (match) return match[1]
+    }
+  }
+  for (const text of recent) {
+    const match = text.match(DNI_RUN)
+    if (match) return match[1]
+  }
+  return null
+}

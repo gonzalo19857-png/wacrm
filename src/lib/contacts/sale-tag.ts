@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { pushCreateSale, extractVehicleModel } from './sale-sheet';
-import { mergeShipmentFields } from '@/lib/shipments/store';
+import { pushCreateSale, extractVehicleModel, extractDniFallback } from './sale-sheet';
+import { mergeShipmentFields, type ShipmentPatch } from '@/lib/shipments/store';
 
 /**
  * Registers a sale for a contact that just got a "sale tag" (migration
@@ -68,34 +68,48 @@ export async function createSale(
       if (conv) {
         const { data: messages } = await db
           .from('messages')
-          .select('content_text')
+          .select('content_text, sender_type')
           .eq('conversation_id', conv.id)
           .not('content_text', 'is', null)
           .order('created_at', { ascending: false })
           .limit(30);
-        const texts = (messages ?? [])
+        const rows = messages ?? [];
+        const texts = rows
           .map((m: { content_text: string | null }) => m.content_text)
           .filter((t: string | null): t is string => !!t);
         modelo = extractVehicleModel(texts);
-      }
 
-      // Best-effort: seed the shipment record's `product` (migration
-      // 066) with the same model the bot's own reply already named,
-      // so dispatch never sees a "ready" order without knowing what
-      // to pack — even when the bot never emitted a SHIPMENT sentinel
-      // with product= itself. `onlyFillBlanks` (mergeShipmentFields'
-      // default behavior) never overwrites a value already set.
-      if (modelo !== 'UNFOUND') {
-        try {
-          await mergeShipmentFields(db, {
-            accountId,
-            contactId,
-            saleId: sale.id,
-            createdBy: userId,
-            patch: { product: modelo },
-          });
-        } catch (err) {
-          console.error('[sale-tag] shipment product fill failed:', err);
+        // Best-effort: seed the shipment record's `product` (migration
+        // 066) and `recipient_dni` with what's already sitting in the
+        // conversation, so dispatch never sees a "ready" order without
+        // knowing what to pack or who to hand it to — this covers not
+        // just the AI bot's own [[SHIPMENT:...]] sentinel (which only
+        // fires while the bot itself is replying) but also a DNI the
+        // customer gave a HUMAN agent in plain chat after a handoff,
+        // which nothing else captures into the structured record.
+        // `onlyFillBlanks` (mergeShipmentFields' default) never
+        // overwrites a value already set.
+        const customerTexts = rows
+          .filter((m: { sender_type: string | null }) => m.sender_type === 'customer')
+          .map((m: { content_text: string | null }) => m.content_text)
+          .filter((t: string | null): t is string => !!t);
+        const dniFallback = extractDniFallback(customerTexts);
+
+        const patch: ShipmentPatch = {};
+        if (modelo !== 'UNFOUND') patch.product = modelo;
+        if (dniFallback) patch.recipient_dni = dniFallback;
+        if (Object.keys(patch).length > 0) {
+          try {
+            await mergeShipmentFields(db, {
+              accountId,
+              contactId,
+              saleId: sale.id,
+              createdBy: userId,
+              patch,
+            });
+          } catch (err) {
+            console.error('[sale-tag] shipment product/dni fill failed:', err);
+          }
         }
       }
 
