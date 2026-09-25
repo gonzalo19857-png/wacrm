@@ -103,18 +103,23 @@ export function stripRepeatedRecommendation(
 }
 
 /**
- * Catches a literal, unfilled "[nombre]" template placeholder that
- * survived into the reply — observed live on the Lima closing message
- * ("Quedó registrado: a nombre de [nombre], turno..."), sent when the
- * customer picked a delivery slot but the model never actually asked
- * for (or registered) their name first. The prompt tells the model to
- * check for this before sending, but — like the repeated-recommendation
- * and bold-formatting cases above — that instruction doesn't reliably
- * hold on its own. Rather than let raw template syntax (or a "confirmed"
- * order with no name on it) reach the customer, swap the whole reply for
- * the same short re-ask the prompt itself specifies for a missing name.
+ * Catches a literal, unfilled name template placeholder that survived
+ * into the reply — observed live on the Lima closing message ("Quedó
+ * registrado: a nombre de [nombre], turno...") and, separately, on a
+ * provincia order confirmation that leaked "[su nombre]" — sent when the
+ * customer picked a delivery slot / gave their DNI but the model never
+ * actually asked for (or registered) their name first. The prompt tells
+ * the model to check for this before sending, but — like the
+ * repeated-recommendation and bold-formatting cases above — that
+ * instruction doesn't reliably hold on its own, and the model doesn't
+ * consistently reuse the exact same bracket wording each time. Matching
+ * any short bracketed phrase containing "nombre" (rather than the single
+ * literal "[nombre]") catches those variants too. Rather than let raw
+ * template syntax (or a "confirmed" order with no name on it) reach the
+ * customer, swap the whole reply for the same short re-ask the prompt
+ * itself specifies for a missing name.
  */
 export function guardAgainstUnfilledName(text: string): string {
-  if (!text.includes('[nombre]')) return text
+  if (!/\[[^\][]{0,20}nombre[^\][]{0,20}\]/i.test(text)) return text
   return '¡Genial! 😊 Y para dejar todo listo, ¿a nombre de quién sería el pedido? 🙏'
 }

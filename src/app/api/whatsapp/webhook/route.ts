@@ -309,27 +309,55 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
 
       const decryptedAccessToken = decrypt(config.access_token)
 
+      // One webhook delivery can bundle messages from several different
+      // customers at once (Meta batches inbound notifications that land
+      // close together). `processMessage` runs flows + automations + the
+      // AI auto-reply (up to `aiRequestTimeoutMs()`, 30s by default) for
+      // each one — awaiting them in a flat sequential loop meant an
+      // unrelated customer earlier in the batch could burn enough of this
+      // route's `maxDuration` that everyone queued behind them got zero
+      // processing when the platform cut the function off (a hard kill,
+      // not a thrown error, so nothing was ever logged — see issue where
+      // fresh "Hola" leads sat with zero AI replies and no alert for
+      // hours). Group by sender first: messages from the SAME customer
+      // still run in order on the same await chain (findOrCreateContact
+      // is find-then-insert, not an atomic upsert, so two inbounds from
+      // one number racing here could create duplicate contacts — and the
+      // AI auto-reply's own debounce/recheck logic already assumes a
+      // same-conversation burst arrives sequentially). Different
+      // customers' chains run concurrently, so one slow/unlucky reply no
+      // longer head-of-line-blocks everyone else in the batch.
+      const chains = new Map<string, { message: WhatsAppMessage; contact: { profile: { name: string }; wa_id: string } }[]>()
       for (let i = 0; i < value.messages.length; i++) {
         const message = value.messages[i]
         const contact = value.contacts[i] || value.contacts[0]
-
-        await processMessage(
-          message,
-          contact,
-          // Tenancy — drives every contact / conversation lookup
-          // and the engines' active-row dispatch.
-          config.account_id,
-          // Audit / sender-of-record — used as the user_id on row
-          // inserts that need it for NOT NULL FK compliance. Always
-          // the admin who saved the WhatsApp config.
-          config.user_id,
-          decryptedAccessToken,
-          // Default ON: the column is NOT NULL DEFAULT TRUE, but a row
-          // read before migration 039 lands would have it undefined,
-          // and losing attachments is the failure mode worth avoiding.
-          config.mirror_inbound_media !== false
-        )
+        const key = contact?.wa_id || message.from || 'unknown'
+        if (!chains.has(key)) chains.set(key, [])
+        chains.get(key)!.push({ message, contact })
       }
+
+      await Promise.all(
+        [...chains.values()].map(async (chain) => {
+          for (const { message, contact } of chain) {
+            await processMessage(
+              message,
+              contact,
+              // Tenancy — drives every contact / conversation lookup
+              // and the engines' active-row dispatch.
+              config.account_id,
+              // Audit / sender-of-record — used as the user_id on row
+              // inserts that need it for NOT NULL FK compliance. Always
+              // the admin who saved the WhatsApp config.
+              config.user_id,
+              decryptedAccessToken,
+              // Default ON: the column is NOT NULL DEFAULT TRUE, but a row
+              // read before migration 039 lands would have it undefined,
+              // and losing attachments is the failure mode worth avoiding.
+              config.mirror_inbound_media !== false
+            )
+          }
+        }),
+      )
     }
   }
 }

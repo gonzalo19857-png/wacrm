@@ -145,6 +145,17 @@ describe('guardAgainstUnfilledName', () => {
     )
   })
 
+  it('swaps a provincia order confirmation that leaked "[su nombre]" for a re-ask', () => {
+    const broken =
+      'Perfecto, quedamos así para su pedido:  \n' +
+      '🚗 Cobertor *talla M* para auto sedán — *S/124.90*  \n' +
+      '🙋 A nombre de: [su nombre]  \n' +
+      '📍 Agencia: Shalom de Independencia, Cajamarca'
+    expect(guardAgainstUnfilledName(broken)).toBe(
+      '¡Genial! 😊 Y para dejar todo listo, ¿a nombre de quién sería el pedido? 🙏',
+    )
+  })
+
   it('is a no-op when the reply has a real name, not the placeholder', () => {
     const text =
       '¡Genial! 😊 Quedó registrado: a nombre de Juan Perez, turno tarde de hoy.'
