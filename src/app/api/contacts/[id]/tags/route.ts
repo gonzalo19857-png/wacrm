@@ -6,6 +6,8 @@ import { createSale } from '@/lib/contacts/sale-tag';
 import { pushSaleToGoogleForm } from '@/lib/contacts/sale-form';
 import { pushCreateSale, pushSetRegion } from '@/lib/contacts/sale-sheet';
 import { sendNewSaleTelegramAlert } from '@/lib/ai/handoff';
+import { sendPurchaseEvent } from '@/lib/meta/conversions-api';
+import { sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils';
 import { mergeShipmentFields } from '@/lib/shipments/store';
 import { clearLifecycleTagsOnSale } from '@/lib/contacts/lifecycle-tags';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
@@ -109,6 +111,42 @@ export async function POST(
             }
           } catch (err) {
             console.error('[contacts/tags] region sheet push failed:', err);
+          }
+        });
+      }
+
+      // Meta Conversions API — report the sale as a Purchase event so
+      // the ad campaign that generated the WhatsApp lead gets credit,
+      // even without a registered price. Deliberately its own branch,
+      // independent of the `price !== null` gate below: a sale tag
+      // added without a price still means a sale happened, and sending
+      // the event without a value beats not sending it at all.
+      if (tag?.is_sale_tag) {
+        const currency = account?.default_currency ?? 'USD';
+        after(async () => {
+          try {
+            const db = supabaseAdmin();
+            const [{ data: eventContact }, { data: config }] = await Promise.all([
+              db.from('contacts').select('phone').eq('id', contactId).maybeSingle(),
+              db
+                .from('whatsapp_config')
+                .select('waba_id')
+                .eq('account_id', ctx.accountId)
+                .maybeSingle(),
+            ]);
+            if (!eventContact?.phone || !config?.waba_id) {
+              console.warn(
+                '[contacts/tags] skipping Conversions API purchase event — missing phone or waba_id',
+              );
+              return;
+            }
+            await sendPurchaseEvent({
+              phone: sanitizePhoneForMeta(eventContact.phone),
+              wabaId: config.waba_id,
+              ...(price !== null ? { value: price, currency } : {}),
+            });
+          } catch (err) {
+            console.error('[contacts/tags] Conversions API purchase event failed:', err);
           }
         });
       }

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   pushSetRegion: vi.fn(),
   pushCreateSale: vi.fn(),
   sendNewSaleTelegramAlert: vi.fn(),
+  sendPurchaseEvent: vi.fn(),
   supabaseAdmin: vi.fn(),
   afterCallbacks: [] as (() => Promise<void> | void)[],
 }));
@@ -48,6 +49,10 @@ vi.mock('@/lib/contacts/sale-sheet', () => ({
 
 vi.mock('@/lib/ai/handoff', () => ({
   sendNewSaleTelegramAlert: mocks.sendNewSaleTelegramAlert,
+}));
+
+vi.mock('@/lib/meta/conversions-api', () => ({
+  sendPurchaseEvent: mocks.sendPurchaseEvent,
 }));
 
 vi.mock('@/lib/flows/admin-client', () => ({
@@ -123,6 +128,7 @@ beforeEach(() => {
   mocks.pushSetRegion.mockReset();
   mocks.pushCreateSale.mockReset();
   mocks.sendNewSaleTelegramAlert.mockReset();
+  mocks.sendPurchaseEvent.mockReset();
   mocks.supabaseAdmin.mockReset();
   mocks.supabaseAdmin.mockReturnValue(fakeDb({}));
   mocks.afterCallbacks = [];
@@ -247,6 +253,90 @@ describe('/api/contacts/[id]/tags — sale tags (migration 045)', () => {
 
     expect(response.status).toBe(200);
     expect(mocks.createSale).not.toHaveBeenCalled();
+  });
+
+  it('sends a Conversions API Purchase event with the price when a sale tag is added with one', async () => {
+    const db = fakeDb({
+      tags: { name: 'Venta', is_sale_tag: true },
+      accounts: { default_currency: 'PEN' },
+      contacts: { phone: '51999999999' },
+      whatsapp_config: { waba_id: 'waba-1' },
+    });
+    mocks.requireRole.mockResolvedValue({ ...context, supabase: db });
+    mocks.supabaseAdmin.mockReturnValue(db);
+    mocks.add.mockResolvedValue({ added: true, dispatched: true });
+    mocks.createSale.mockResolvedValue({ id: 'sale-1', modelo: 'UNFOUND' });
+
+    await POST(request('POST', { tag_id: 'tag-1', price: 147.9 }), params);
+    await flushAfter();
+
+    expect(mocks.sendPurchaseEvent).toHaveBeenCalledWith({
+      phone: '51999999999',
+      wabaId: 'waba-1',
+      value: 147.9,
+      currency: 'PEN',
+    });
+  });
+
+  it('sends a Conversions API Purchase event WITHOUT a value when no price was registered', async () => {
+    const db = fakeDb({
+      tags: { name: 'Venta', is_sale_tag: true },
+      contacts: { phone: '51999999999' },
+      whatsapp_config: { waba_id: 'waba-1' },
+    });
+    mocks.requireRole.mockResolvedValue({ ...context, supabase: db });
+    mocks.supabaseAdmin.mockReturnValue(db);
+    mocks.add.mockResolvedValue({ added: true, dispatched: true });
+
+    await POST(request('POST', { tag_id: 'tag-1' }), params);
+    await flushAfter();
+
+    // No `price` in the request — the event still fires (better than
+    // losing the conversion entirely), just without value/currency.
+    expect(mocks.sendPurchaseEvent).toHaveBeenCalledWith({
+      phone: '51999999999',
+      wabaId: 'waba-1',
+    });
+    expect(mocks.createSale).not.toHaveBeenCalled();
+  });
+
+  it('does not send a Purchase event for a non-sale tag', async () => {
+    const db = fakeDb({ tags: { name: 'Interesado', is_sale_tag: false } });
+    mocks.requireRole.mockResolvedValue({ ...context, supabase: db });
+    mocks.supabaseAdmin.mockReturnValue(db);
+    mocks.add.mockResolvedValue({ added: true, dispatched: true });
+
+    await POST(request('POST', { tag_id: 'tag-2', price: 50 }), params);
+    await flushAfter();
+
+    expect(mocks.sendPurchaseEvent).not.toHaveBeenCalled();
+  });
+
+  it('does not send a Purchase event on a duplicate re-tag', async () => {
+    const db = fakeDb({ tags: { name: 'Venta', is_sale_tag: true } });
+    mocks.requireRole.mockResolvedValue({ ...context, supabase: db });
+    mocks.supabaseAdmin.mockReturnValue(db);
+    mocks.add.mockResolvedValue({ added: false, dispatched: false, reason: 'duplicate' });
+
+    await POST(request('POST', { tag_id: 'tag-1', price: 147.9 }), params);
+    await flushAfter();
+
+    expect(mocks.sendPurchaseEvent).not.toHaveBeenCalled();
+  });
+
+  it('skips the Purchase event (logged, not thrown) when the contact has no phone', async () => {
+    const db = fakeDb({
+      tags: { name: 'Venta', is_sale_tag: true },
+      whatsapp_config: { waba_id: 'waba-1' },
+    });
+    mocks.requireRole.mockResolvedValue({ ...context, supabase: db });
+    mocks.supabaseAdmin.mockReturnValue(db);
+    mocks.add.mockResolvedValue({ added: true, dispatched: true });
+
+    await POST(request('POST', { tag_id: 'tag-1' }), params);
+    await flushAfter();
+
+    expect(mocks.sendPurchaseEvent).not.toHaveBeenCalled();
   });
 
   it('passes fecha through to createSale, and pushes to the live sheet once deferred', async () => {
