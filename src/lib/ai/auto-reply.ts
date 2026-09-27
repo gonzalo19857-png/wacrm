@@ -177,7 +177,14 @@ export async function dispatchInboundToAiReply(
     // cap bounds one thread; this bounds a burst across many threads (a
     // marketing blast landing 200 replies at once) so we never run the
     // owner's key past the provider's rate limit. Over the limit → skip
-    // the auto-reply; the inbound still sits in the inbox for a human.
+    // the auto-reply; the inbound still sits in the inbox for a human —
+    // but unlike the other early-return gates above, this one used to
+    // skip silently (only a server-side console.warn), which meant a
+    // burst of inbounds during this window got no reply AND no visible
+    // trace anywhere an agent would see it. Call the same
+    // notifyNeedsHuman() the other gates use so it shows up exactly like
+    // them (live observed: a full hour of same-day inbounds going
+    // unanswered with nothing in the inbox pointing at why).
     const acctLimit = checkRateLimit(
       `ai-autoreply:${accountId}`,
       RATE_LIMITS.aiAutoReplyAccount,
@@ -186,6 +193,7 @@ export async function dispatchInboundToAiReply(
       console.warn(
         `[ai auto-reply] account ${accountId} hit the per-account rate limit — skipping this inbound.`,
       )
+      await notifyNeedsHuman()
       return
     }
 

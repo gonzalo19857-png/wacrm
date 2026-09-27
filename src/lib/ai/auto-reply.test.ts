@@ -24,6 +24,7 @@ const h = vi.hoisted(() => ({
     // inbound message landing during the debounce wait.
     convOnRecheck: null as Record<string, unknown> | null,
     convSelectCount: 0,
+    rateLimitOk: true as boolean,
   },
 }))
 
@@ -42,6 +43,19 @@ vi.mock('./handoff', async (importOriginal) => ({
 }))
 vi.mock('@/lib/contacts/lifecycle-tags', () => ({
   applyPotentialTag: h.applyPotentialTag,
+}))
+vi.mock('@/lib/rate-limit', async (importOriginal) => ({
+  // RATE_LIMITS stays real (just config constants); only the pass/fail
+  // outcome of checkRateLimit is stubbed, controlled by
+  // `h.state.rateLimitOk` — the real limiter is an in-memory fixed
+  // window that would otherwise require 30 real calls to exercise.
+  ...(await importOriginal<Record<string, unknown>>()),
+  checkRateLimit: () => ({
+    success: h.state.rateLimitOk,
+    remaining: h.state.rateLimitOk ? 1 : 0,
+    reset: 0,
+    limit: 30,
+  }),
 }))
 vi.mock('@/lib/flows/meta-send', () => ({
   engineSendText: h.engineSendText,
@@ -126,6 +140,7 @@ beforeEach(() => {
   h.state.rpcCalls = []
   h.state.convOnRecheck = null
   h.state.convSelectCount = 0
+  h.state.rateLimitOk = true
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.retrieveKnowledge.mockResolvedValue({ excerpts: [], imageUrl: null })
@@ -438,6 +453,16 @@ describe('dispatchInboundToAiReply — needs-human Telegram alerts', () => {
       expect.anything(),
       expect.objectContaining({ reason: 'needs_human' }),
     )
+  })
+
+  it('alerts (and never calls the model) when the account-wide rate limit is hit', async () => {
+    h.state.rateLimitOk = false
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.sendNeedsReplyTelegramAlert).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ reason: 'needs_human', detail: 'Último mensaje: "hola"' }),
+    )
+    expect(h.generateReply).not.toHaveBeenCalled()
   })
 
   it('alerts when the per-conversation reply cap is reached', async () => {
