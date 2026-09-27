@@ -5,6 +5,7 @@ import {
   useRef,
   useCallback,
   useEffect,
+  useMemo,
   KeyboardEvent,
 } from "react";
 import {
@@ -56,6 +57,15 @@ import {
 import { validateInteractivePayload } from "@/lib/whatsapp/interactive";
 import type { InteractiveMessagePayload, QuickReply } from "@/types";
 import { QuickReplyPicker } from "./quick-reply-picker";
+import { SlashQuickReplyMenu } from "./slash-quick-reply-menu";
+
+/**
+ * Matches only when "/" is the very first character of the whole draft
+ * and nothing after it is whitespace yet — same trigger WhatsApp
+ * Business uses. Typing a space (or anything before the "/") closes the
+ * shortcut menu instead of keeping it open.
+ */
+const SLASH_TRIGGER = /^\/(\S*)$/;
 
 /** Media content types an agent can send from the composer. */
 export type ComposerMediaKind = "image" | "video" | "document" | "audio";
@@ -157,6 +167,12 @@ export function MessageComposer({
   const [sending, setSending] = useState(false);
   const [drafting, setDrafting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Populated once `openInteractiveBuilder` is defined below (see the
+  // effect next to it) — lets the slash-menu handler above call it
+  // without a declaration-order problem in this component body.
+  const openInteractiveBuilderRef = useRef<(seed?: InteractiveMessagePayload) => void>(
+    () => {},
+  );
 
   // Interactive-message builder dialog + quick-reply picker.
   const [interactiveOpen, setInteractiveOpen] = useState(false);
@@ -164,6 +180,42 @@ export function MessageComposer({
     useState<InteractiveMessagePayload>(blankButtonsPayload);
   const [savingQuickReply, setSavingQuickReply] = useState(false);
   const [quickReplyOpen, setQuickReplyOpen] = useState(false);
+
+  // Shared quick-reply list — fetched once here so both the "+" picker
+  // dialog and the slash-command menu below read from the same data
+  // instead of each fetching independently.
+  const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
+  const [quickRepliesLoading, setQuickRepliesLoading] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    setQuickRepliesLoading(true);
+    void (async () => {
+      try {
+        const res = await fetch("/api/quick-replies", { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (!cancelled && res.ok) {
+          setQuickReplies((data.quick_replies as QuickReply[]) ?? []);
+        }
+      } finally {
+        if (!cancelled) setQuickRepliesLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Slash-command shortcut menu (WhatsApp-Business style). `slashQuery`
+  // is `null` when closed, or the text typed after "/" when open —
+  // see `SLASH_TRIGGER` above for exactly when that is.
+  const [slashQuery, setSlashQuery] = useState<string | null>(null);
+  const [slashActiveIndex, setSlashActiveIndex] = useState(0);
+  const slashMatches = useMemo(() => {
+    if (slashQuery === null) return [];
+    const q = slashQuery.toLowerCase();
+    return quickReplies.filter((qr) => qr.title.toLowerCase().includes(q));
+  }, [quickReplies, slashQuery]);
+  const slashMenuOpen = slashQuery !== null && slashMatches.length > 0;
 
   // Media attachment state. `draft` holds an uploaded-but-not-yet-sent
   // attachment; `busy` covers the upload/transcode window.
@@ -240,6 +292,7 @@ export function MessageComposer({
     try {
       onSend(trimmed, replyTo?.id);
       setText("");
+      setSlashQuery(null);
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
       }
@@ -248,20 +301,75 @@ export function MessageComposer({
     }
   }, [text, sending, sessionExpired, noPhone, onSend, replyTo?.id]);
 
+  // A picked quick reply (from either entry point) replaces or fills the
+  // composer text; interactive snippets open the builder pre-filled.
+  // Declared before handleKeyDown/handleChange since both call it.
+  const handlePickSlashQuickReply = useCallback(
+    (qr: QuickReply) => {
+      setSlashQuery(null);
+      if (qr.kind === "interactive" && qr.interactive_payload) {
+        setText("");
+        openInteractiveBuilderRef.current(qr.interactive_payload);
+        return;
+      }
+      const body = qr.content_text ?? "";
+      setText(body);
+      requestAnimationFrame(() => {
+        adjustHeight();
+        const el = textareaRef.current;
+        if (el) {
+          el.focus();
+          el.setSelectionRange(el.value.length, el.value.length);
+        }
+      });
+    },
+    [adjustHeight],
+  );
+
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (slashMenuOpen) {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          setSlashActiveIndex((i) => (i + 1) % slashMatches.length);
+          return;
+        }
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          setSlashActiveIndex((i) => (i - 1 + slashMatches.length) % slashMatches.length);
+          return;
+        }
+        if (e.key === "Enter" || e.key === "Tab") {
+          e.preventDefault();
+          handlePickSlashQuickReply(slashMatches[slashActiveIndex]);
+          return;
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setSlashQuery(null);
+          return;
+        }
+      }
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         handleSend();
       }
     },
-    [handleSend]
+    [slashMenuOpen, slashMatches, slashActiveIndex, handlePickSlashQuickReply, handleSend]
   );
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      setText(e.target.value);
+      const value = e.target.value;
+      setText(value);
       adjustHeight();
+      const match = SLASH_TRIGGER.exec(value);
+      if (match) {
+        setSlashQuery(match[1]);
+        setSlashActiveIndex(0);
+      } else {
+        setSlashQuery(null);
+      }
     },
     [adjustHeight]
   );
@@ -277,6 +385,7 @@ export function MessageComposer({
       const start = el?.selectionStart ?? text.length;
       const end = el?.selectionEnd ?? text.length;
       setText((prev) => prev.slice(0, start) + emoji + prev.slice(end));
+      setSlashQuery(null);
       requestAnimationFrame(() => {
         adjustHeight();
         if (!el) return;
@@ -315,6 +424,7 @@ export function MessageComposer({
         return;
       }
       setText(draftText);
+      setSlashQuery(null);
       // Let the textarea grow to fit and drop the cursor at the end so
       // the agent can tweak immediately.
       requestAnimationFrame(() => {
@@ -341,6 +451,9 @@ export function MessageComposer({
     },
     [],
   );
+  useEffect(() => {
+    openInteractiveBuilderRef.current = openInteractiveBuilder;
+  }, [openInteractiveBuilder]);
 
   const sendInteractive = useCallback(() => {
     const result = validateInteractivePayload(interactivePayload);
@@ -380,6 +493,11 @@ export function MessageComposer({
         toast.error(data.error ?? t("quickReplySaveError"));
         return;
       }
+      // Reflect it immediately in the shared list — otherwise it'd only
+      // show up in the slash menu / "+" picker after a composer remount.
+      if (data.quick_reply) {
+        setQuickReplies((prev) => [data.quick_reply as QuickReply, ...prev]);
+      }
       toast.success(t("quickReplySaved"));
     } catch {
       toast.error(t("quickReplySaveError"));
@@ -393,6 +511,7 @@ export function MessageComposer({
   const handlePickQuickReply = useCallback(
     (qr: QuickReply) => {
       setQuickReplyOpen(false);
+      setSlashQuery(null);
       if (qr.kind === "interactive" && qr.interactive_payload) {
         openInteractiveBuilder(qr.interactive_payload);
         return;
@@ -800,32 +919,42 @@ export function MessageComposer({
             }
           />
 
-          <textarea
-            ref={textareaRef}
-            value={text}
-            onChange={handleChange}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            placeholder={
-              readOnly
-                ? t("readOnlyPlaceholder")
-                : noPhone
-                  ? t("noPhonePlaceholder")
-                  : sessionExpired
-                    ? t("sessionExpiredPlaceholder")
-                    : t("typeMessagePlaceholder")
-            }
-            disabled={sessionExpired || readOnly || noPhone}
-            rows={1}
-            // Textarea keeps its own inline title — the GatedButton
-            // wrapping pattern doesn't apply to non-button inputs.
-            // The placeholder text also surfaces the read-only state.
-            title={readOnly ? t("readOnlyTitle") : undefined}
-            className={cn(
-              "flex-1 resize-none rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50",
-              (sessionExpired || readOnly || noPhone) && "cursor-not-allowed opacity-50"
+          <div className="relative flex-1">
+            {slashMenuOpen && (
+              <SlashQuickReplyMenu
+                items={slashMatches}
+                activeIndex={slashActiveIndex}
+                onHover={setSlashActiveIndex}
+                onPick={handlePickSlashQuickReply}
+              />
             )}
-          />
+            <textarea
+              ref={textareaRef}
+              value={text}
+              onChange={handleChange}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              placeholder={
+                readOnly
+                  ? t("readOnlyPlaceholder")
+                  : noPhone
+                    ? t("noPhonePlaceholder")
+                    : sessionExpired
+                      ? t("sessionExpiredPlaceholder")
+                      : t("typeMessagePlaceholder")
+              }
+              disabled={sessionExpired || readOnly || noPhone}
+              rows={1}
+              // Textarea keeps its own inline title — the GatedButton
+              // wrapping pattern doesn't apply to non-button inputs.
+              // The placeholder text also surfaces the read-only state.
+              title={readOnly ? t("readOnlyTitle") : undefined}
+              className={cn(
+                "w-full resize-none rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50",
+                (sessionExpired || readOnly || noPhone) && "cursor-not-allowed opacity-50"
+              )}
+            />
+          </div>
 
           <GatedButton
             size="sm"
@@ -887,6 +1016,8 @@ export function MessageComposer({
         open={quickReplyOpen}
         onOpenChange={setQuickReplyOpen}
         onPick={handlePickQuickReply}
+        items={quickReplies}
+        loading={quickRepliesLoading}
       />
     </div>
   );

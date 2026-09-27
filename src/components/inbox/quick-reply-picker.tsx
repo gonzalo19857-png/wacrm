@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { Loader2, MessageSquare, Zap } from "lucide-react";
 import { useTranslations } from "next-intl";
 
@@ -17,6 +16,9 @@ interface QuickReplyPickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onPick: (qr: QuickReply) => void;
+  /** Shared with the slash-command menu — fetched once by the composer. */
+  items: QuickReply[];
+  loading: boolean;
 }
 
 /**
@@ -28,30 +30,10 @@ export function QuickReplyPicker({
   open,
   onOpenChange,
   onPick,
+  items,
+  loading,
 }: QuickReplyPickerProps) {
   const t = useTranslations("Inbox.composer");
-  const [items, setItems] = useState<QuickReply[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    setLoading(true);
-    void (async () => {
-      try {
-        const res = await fetch("/api/quick-replies", { cache: "no-store" });
-        const data = await res.json().catch(() => ({}));
-        if (!cancelled && res.ok) {
-          setItems((data.quick_replies as QuickReply[]) ?? []);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [open]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
