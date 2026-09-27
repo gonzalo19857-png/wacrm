@@ -6,7 +6,7 @@ import { createSale } from '@/lib/contacts/sale-tag';
 import { pushSaleToGoogleForm } from '@/lib/contacts/sale-form';
 import { pushCreateSale, pushSetRegion } from '@/lib/contacts/sale-sheet';
 import { sendNewSaleTelegramAlert } from '@/lib/ai/handoff';
-import { sendPurchaseEvent } from '@/lib/meta/conversions-api';
+import { loadConversionsConfig, sendPurchaseEvent } from '@/lib/meta/conversions-api';
 import { sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils';
 import { mergeShipmentFields } from '@/lib/shipments/store';
 import { clearLifecycleTagsOnSale } from '@/lib/contacts/lifecycle-tags';
@@ -126,14 +126,19 @@ export async function POST(
         after(async () => {
           try {
             const db = supabaseAdmin();
-            const [{ data: eventContact }, { data: config }] = await Promise.all([
+            const [{ data: eventContact }, { data: config }, conversionsConfig] = await Promise.all([
               db.from('contacts').select('phone').eq('id', contactId).maybeSingle(),
               db
                 .from('whatsapp_config')
                 .select('waba_id')
                 .eq('account_id', ctx.accountId)
                 .maybeSingle(),
+              loadConversionsConfig(db, ctx.accountId),
             ]);
+            // Opt-in per account (Settings → Sales) — most accounts
+            // won't have this configured, so silently skip rather than
+            // logging noise for every sale.
+            if (!conversionsConfig) return;
             if (!eventContact?.phone || !config?.waba_id) {
               console.warn(
                 '[contacts/tags] skipping Conversions API purchase event — missing phone or waba_id',
@@ -141,6 +146,7 @@ export async function POST(
               return;
             }
             await sendPurchaseEvent({
+              config: conversionsConfig,
               phone: sanitizePhoneForMeta(eventContact.phone),
               wabaId: config.waba_id,
               ...(price !== null ? { value: price, currency } : {}),

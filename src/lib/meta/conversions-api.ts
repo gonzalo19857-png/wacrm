@@ -16,6 +16,9 @@
  */
 
 import { createHash } from 'node:crypto'
+import type { SupabaseClient } from '@supabase/supabase-js'
+
+import { decrypt } from '@/lib/whatsapp/encryption'
 
 const META_API_VERSION = 'v21.0'
 const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`
@@ -30,28 +33,39 @@ export function hashPhone(phone: string): string {
   return createHash('sha256').update(phone).digest('hex')
 }
 
-interface ConversionsConfig {
+export interface MetaConversionsConfig {
   datasetId: string
   accessToken: string
 }
 
 /**
- * Reads the dedicated Conversions API credentials from the
- * environment (see AskUserQuestion decision: env vars over a
- * per-account DB table, since this is a single-business deployment).
- * Throws with a clear message when either is missing so the caller's
- * try/catch surfaces an actionable log line instead of a confusing
- * downstream fetch failure.
+ * Reads an account's Conversions API credentials from
+ * `meta_conversions_configs` (migration 067). Originally these lived
+ * in `META_CONVERSIONS_DATASET_ID` / `META_CONVERSIONS_API_TOKEN` env
+ * vars, but those only exist on whatever machine someone happened to
+ * edit `.env` on — never reliably present on every hosting setup this
+ * app runs on. A DB-backed, admin-editable setting (same shape as
+ * `sale_sheet_webhooks`) needs no server access to configure.
+ *
+ * Returns `null` — not a throw — when the account hasn't set this up
+ * or has toggled it off: the feature is opt-in per account, not a
+ * required piece of infra like `whatsapp_config`.
  */
-function getConversionsConfig(): ConversionsConfig {
-  const datasetId = process.env.META_CONVERSIONS_DATASET_ID
-  const accessToken = process.env.META_CONVERSIONS_API_TOKEN
-  if (!datasetId || !accessToken) {
-    throw new Error(
-      'Meta Conversions API is not configured — set META_CONVERSIONS_DATASET_ID and META_CONVERSIONS_API_TOKEN.',
-    )
+export async function loadConversionsConfig(
+  db: SupabaseClient,
+  accountId: string,
+): Promise<MetaConversionsConfig | null> {
+  const { data, error } = await db
+    .from('meta_conversions_configs')
+    .select('dataset_id, access_token, is_active')
+    .eq('account_id', accountId)
+    .maybeSingle()
+  if (error) {
+    console.error('[meta/conversions-api] failed to load config:', error)
+    return null
   }
-  return { datasetId, accessToken }
+  if (!data || !data.is_active) return null
+  return { datasetId: data.dataset_id, accessToken: decrypt(data.access_token) }
 }
 
 async function throwMetaError(response: Response, fallback: string): Promise<never> {
@@ -66,6 +80,8 @@ async function throwMetaError(response: Response, fallback: string): Promise<nev
 }
 
 export interface SendPurchaseEventArgs {
+  /** Resolved via `loadConversionsConfig` — the caller decides whether the account has one configured. */
+  config: MetaConversionsConfig
   /** Digits-only E.164 phone (see `sanitizePhoneForMeta`) — hashed before sending. */
   phone: string
   /** `whatsapp_config.waba_id` for the account whose number the sale came in on. */
@@ -92,8 +108,8 @@ export interface SendPurchaseEventArgs {
  * on a page with a browser pixel.
  */
 export async function sendPurchaseEvent(args: SendPurchaseEventArgs): Promise<void> {
-  const { phone, wabaId, value, currency, testEventCode } = args
-  const { datasetId, accessToken } = getConversionsConfig()
+  const { config, phone, wabaId, value, currency, testEventCode } = args
+  const { datasetId, accessToken } = config
 
   const event: Record<string, unknown> = {
     event_name: 'Purchase',

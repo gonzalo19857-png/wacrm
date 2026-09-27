@@ -1717,7 +1717,22 @@
       "sheetWebhookActiveDesc": "Turn off to pause pushing without losing the saved URL and secret.",
       "sheetWebhookUrlRequired": "Enter the Web app URL first",
       "sheetWebhookSaveSuccess": "Sheet webhook saved",
-      "sheetWebhookSaveFailed": "Couldn't save the sheet webhook"
+      "sheetWebhookSaveFailed": "Couldn't save the sheet webhook",
+      "metaConversionsTitle": "Meta Conversions API",
+      "metaConversionsDesc": "Report every WhatsApp sale as a Purchase event to Meta, so the ad campaign that generated the lead gets credit — even though the sale closes inside the chat, not on a page with a browser pixel.",
+      "metaConversionsDatasetIdLabel": "Dataset ID",
+      "metaConversionsDatasetIdPlaceholder": "e.g. 1051522171065404",
+      "metaConversionsDatasetIdHint": "Events Manager → Data sources → your dataset's \"Identifier\".",
+      "metaConversionsTokenLabel": "Access token",
+      "metaConversionsTokenPlaceholder": "Paste the dataset's access token",
+      "metaConversionsTokenStoredPlaceholder": "•••••••••••••••• (saved)",
+      "metaConversionsTokenHint": "Events Manager → Settings → Conversions API → Generate access token.",
+      "metaConversionsActive": "Active",
+      "metaConversionsActiveDesc": "Turn off to stop sending Purchase events without losing the saved dataset ID and token.",
+      "metaConversionsDatasetIdRequired": "Enter the dataset ID first",
+      "metaConversionsTokenRequired": "Enter the access token first",
+      "metaConversionsSaveSuccess": "Meta Conversions API saved",
+      "metaConversionsSaveFailed": "Couldn't save the Meta Conversions API config"
     },
     "aiConfig": {
       "title": "Agent setup",

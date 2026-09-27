@@ -1717,7 +1717,22 @@
       "sheetWebhookActiveDesc": "저장된 URL과 비밀키를 유지한 채 전송만 일시 중지하려면 끄세요.",
       "sheetWebhookUrlRequired": "먼저 웹 앱 URL을 입력하세요",
       "sheetWebhookSaveSuccess": "시트 웹훅이 저장되었습니다",
-      "sheetWebhookSaveFailed": "시트 웹훅을 저장하지 못했습니다"
+      "sheetWebhookSaveFailed": "시트 웹훅을 저장하지 못했습니다",
+      "metaConversionsTitle": "Meta 전환 API",
+      "metaConversionsDesc": "판매가 등록될 때마다 Meta에 구매(Purchase) 이벤트로 보고합니다 — 판매가 채팅 안에서 마무리되어 브라우저 픽셀이 없어도, 리드를 만든 광고 캠페인이 성과를 인정받습니다.",
+      "metaConversionsDatasetIdLabel": "데이터 세트 ID",
+      "metaConversionsDatasetIdPlaceholder": "예: 1051522171065404",
+      "metaConversionsDatasetIdHint": "이벤트 관리자 → 데이터 소스 → 데이터 세트의 \"식별자\".",
+      "metaConversionsTokenLabel": "액세스 토큰",
+      "metaConversionsTokenPlaceholder": "데이터 세트의 액세스 토큰을 붙여넣으세요",
+      "metaConversionsTokenStoredPlaceholder": "•••••••••••••••• (저장됨)",
+      "metaConversionsTokenHint": "이벤트 관리자 → 설정 → 전환 API → 액세스 토큰 생성.",
+      "metaConversionsActive": "활성화",
+      "metaConversionsActiveDesc": "저장된 데이터 세트 ID와 토큰을 유지한 채 전송만 일시 중지하려면 끄세요.",
+      "metaConversionsDatasetIdRequired": "먼저 데이터 세트 ID를 입력하세요",
+      "metaConversionsTokenRequired": "먼저 액세스 토큰을 입력하세요",
+      "metaConversionsSaveSuccess": "Meta 전환 API 설정이 저장되었습니다",
+      "metaConversionsSaveFailed": "Meta 전환 API 설정을 저장하지 못했습니다"
     },
     "aiConfig": {
       "title": "에이전트 설정",

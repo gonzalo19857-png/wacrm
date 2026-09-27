@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
-import { Coins, Loader2, FileSpreadsheet } from "lucide-react";
+import { Coins, Loader2, FileSpreadsheet, Radio } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
@@ -201,6 +201,70 @@ export function DealsSettings() {
       toast.error(t("sheetWebhookSaveFailed"));
     } finally {
       setSavingWebhook(false);
+    }
+  }
+
+  // ------------------------------------------------------------
+  // Meta Conversions API — reports every registered sale as a
+  // Purchase event so Click-to-WhatsApp ad campaigns get credit for
+  // sales that close inside the chat. See
+  // supabase/migrations/067_meta_conversions_config.sql.
+  // ------------------------------------------------------------
+  const [metaDatasetId, setMetaDatasetId] = useState("");
+  const [metaToken, setMetaToken] = useState("");
+  const [metaTokenEdited, setMetaTokenEdited] = useState(false);
+  const [hasStoredMetaToken, setHasStoredMetaToken] = useState(false);
+  const [metaActive, setMetaActive] = useState(true);
+  const [loadingMeta, setLoadingMeta] = useState(true);
+  const [savingMeta, setSavingMeta] = useState(false);
+
+  const loadMetaConversions = useCallback(async () => {
+    setLoadingMeta(true);
+    try {
+      const res = await fetch("/api/settings/meta-conversions");
+      const data = await res.json();
+      if (data.configured) {
+        setMetaDatasetId(data.dataset_id ?? "");
+        setHasStoredMetaToken(Boolean(data.has_token));
+        setMetaActive(Boolean(data.is_active));
+      }
+    } finally {
+      setLoadingMeta(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadMetaConversions();
+  }, [loadMetaConversions]);
+
+  async function handleSaveMetaConversions() {
+    if (!metaDatasetId.trim()) {
+      toast.error(t("metaConversionsDatasetIdRequired"));
+      return;
+    }
+    setSavingMeta(true);
+    try {
+      const res = await fetch("/api/settings/meta-conversions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dataset_id: metaDatasetId.trim(),
+          access_token: metaTokenEdited ? metaToken.trim() : undefined,
+          is_active: metaActive,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error ?? t("metaConversionsSaveFailed"));
+        return;
+      }
+      toast.success(t("metaConversionsSaveSuccess"));
+      setMetaTokenEdited(false);
+      await loadMetaConversions();
+    } catch {
+      toast.error(t("metaConversionsSaveFailed"));
+    } finally {
+      setSavingMeta(false);
     }
   }
 
@@ -434,6 +498,93 @@ export function DealsSettings() {
                   className="bg-primary text-primary-foreground hover:bg-primary/90"
                 >
                   {savingWebhook ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      {t("saving")}
+                    </>
+                  ) : (
+                    t("save")
+                  )}
+                </Button>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-foreground">
+            <Radio className="size-4 text-primary" />
+            {t("metaConversionsTitle")}
+          </CardTitle>
+          <CardDescription className="text-muted-foreground">
+            {t("metaConversionsDesc")}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {loadingMeta ? (
+            <div className="flex items-center justify-center py-6">
+              <Loader2 className="size-5 animate-spin text-primary" />
+            </div>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <Label className="text-muted-foreground">{t("metaConversionsDatasetIdLabel")}</Label>
+                <Input
+                  value={metaDatasetId}
+                  onChange={(e) => setMetaDatasetId(e.target.value)}
+                  placeholder={t("metaConversionsDatasetIdPlaceholder")}
+                  disabled={!canEditSettings}
+                />
+                <p className="text-xs text-muted-foreground">{t("metaConversionsDatasetIdHint")}</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-muted-foreground">{t("metaConversionsTokenLabel")}</Label>
+                <Input
+                  type="password"
+                  value={metaToken}
+                  onChange={(e) => {
+                    setMetaToken(e.target.value);
+                    setMetaTokenEdited(true);
+                  }}
+                  onFocus={() => {
+                    if (!metaTokenEdited && hasStoredMetaToken) {
+                      setMetaToken("");
+                      setMetaTokenEdited(true);
+                    }
+                  }}
+                  placeholder={
+                    hasStoredMetaToken
+                      ? t("metaConversionsTokenStoredPlaceholder")
+                      : t("metaConversionsTokenPlaceholder")
+                  }
+                  disabled={!canEditSettings}
+                  autoComplete="off"
+                />
+                <p className="text-xs text-muted-foreground">{t("metaConversionsTokenHint")}</p>
+              </div>
+
+              <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+                <div>
+                  <p className="text-sm font-medium text-foreground">{t("metaConversionsActive")}</p>
+                  <p className="text-xs text-muted-foreground">{t("metaConversionsActiveDesc")}</p>
+                </div>
+                <Switch
+                  checked={metaActive}
+                  onCheckedChange={setMetaActive}
+                  disabled={!canEditSettings}
+                />
+              </div>
+
+              {canEditSettings && (
+                <Button
+                  onClick={handleSaveMetaConversions}
+                  disabled={savingMeta}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  {savingMeta ? (
                     <>
                       <Loader2 className="size-4 animate-spin" />
                       {t("saving")}
