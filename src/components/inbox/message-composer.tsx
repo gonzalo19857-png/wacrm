@@ -70,6 +70,22 @@ const SLASH_TRIGGER = /^\/(\S*)$/;
 /** Media content types an agent can send from the composer. */
 export type ComposerMediaKind = "image" | "video" | "document" | "audio";
 
+/** Pulls every pasted image out of a clipboard event. Shared by the
+ *  textarea's paste handler and the draft preview's caption-input paste
+ *  handler, since staging a batch swaps which of those two is on screen. */
+function extractPastedImages(e: React.ClipboardEvent): File[] {
+  const items = e.clipboardData?.items;
+  if (!items) return [];
+  const files: File[] = [];
+  for (const item of items) {
+    if (item.kind === "file" && item.type.startsWith("image/")) {
+      const file = item.getAsFile();
+      if (file) files.push(file);
+    }
+  }
+  return files;
+}
+
 /** Supabase Storage bucket holding agent-sent chat attachments (migration 023). */
 export const CHAT_MEDIA_BUCKET = "chat-media";
 
@@ -627,15 +643,21 @@ export function MessageComposer({
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
       if (inputsDisabled || busy) return;
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      const files: File[] = [];
-      for (const item of items) {
-        if (item.kind === "file" && item.type.startsWith("image/")) {
-          const file = item.getAsFile();
-          if (file) files.push(file);
-        }
-      }
+      const files = extractPastedImages(e);
+      if (files.length === 0) return;
+      e.preventDefault();
+      void stageFiles("image", files);
+    },
+    [inputsDisabled, busy, stageFiles],
+  );
+
+  // Once a batch is staged the textarea unmounts (the draft preview takes
+  // its place), so a second Ctrl+V has nothing to land on unless the
+  // preview's own caption input also accepts pasted images.
+  const handleCaptionPaste = useCallback(
+    (e: React.ClipboardEvent<HTMLInputElement>) => {
+      if (inputsDisabled || busy) return;
+      const files = extractPastedImages(e);
       if (files.length === 0) return;
       e.preventDefault();
       void stageFiles("image", files);
@@ -855,6 +877,7 @@ export function MessageComposer({
           busy={busy}
           readOnly={readOnly}
           onCaptionChange={setDraftCaption}
+          onCaptionPaste={handleCaptionPaste}
           onRemove={discardDraftAt}
           onDiscardAll={discardAllDrafts}
           onSend={sendDrafts}
@@ -1109,6 +1132,7 @@ function MediaDraftPreview({
   busy,
   readOnly,
   onCaptionChange,
+  onCaptionPaste,
   onRemove,
   onDiscardAll,
   onSend,
@@ -1119,6 +1143,7 @@ function MediaDraftPreview({
   busy: boolean;
   readOnly: boolean;
   onCaptionChange: (caption: string) => void;
+  onCaptionPaste: (e: React.ClipboardEvent<HTMLInputElement>) => void;
   onRemove: (index: number) => void;
   onDiscardAll: () => void;
   onSend: () => void;
@@ -1170,6 +1195,7 @@ function MediaDraftPreview({
             value={caption}
             maxLength={MEDIA_CAPTION_MAX}
             onChange={(e) => onCaptionChange(e.target.value)}
+            onPaste={onCaptionPaste}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
@@ -1177,6 +1203,10 @@ function MediaDraftPreview({
               }
             }}
             placeholder={t("addCaption")}
+            // Autofocus (only fires on this component's mount, i.e. when a
+            // batch first starts) so a follow-up Ctrl+V for another image
+            // has somewhere to land without an extra click.
+            autoFocus
             className="flex-1 rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50"
           />
         )}
