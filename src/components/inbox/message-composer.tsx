@@ -117,7 +117,6 @@ interface MediaDraft {
   /** Storage path — used to GC the object if the draft is discarded. */
   path: string;
   filename: string;
-  caption: string;
 }
 
 interface MessageComposerProps {
@@ -132,7 +131,10 @@ interface MessageComposerProps {
    */
   noPhone?: boolean;
   onSend: (text: string, replyToId?: string) => void;
-  onSendMedia: (payload: SendMediaPayload) => void;
+  // May be async — the composer awaits it so several staged attachments
+  // are sent one at a time instead of racing (the caller mints each
+  // optimistic bubble's id from Date.now(), which needs the gap).
+  onSendMedia: (payload: SendMediaPayload) => void | Promise<void>;
   onSendInteractive: (payload: InteractiveMessagePayload, replyToId?: string) => void;
   onOpenTemplates: () => void;
   replyTo?: ReplyDraft | null;
@@ -217,20 +219,24 @@ export function MessageComposer({
   }, [quickReplies, slashQuery]);
   const slashMenuOpen = slashQuery !== null && slashMatches.length > 0;
 
-  // Media attachment state. `draft` holds an uploaded-but-not-yet-sent
-  // attachment; `busy` covers the upload/transcode window.
-  const [draft, setDraft] = useState<MediaDraft | null>(null);
+  // Media attachment state. `drafts` holds any uploaded-but-not-yet-sent
+  // attachments (pasting or attaching more than one queues them here
+  // instead of replacing); `draftCaption` is the single caption shared
+  // across the batch, applied to the last non-audio item on send.
+  // `busy` covers the upload/transcode window.
+  const [drafts, setDrafts] = useState<MediaDraft[]>([]);
+  const [draftCaption, setDraftCaption] = useState("");
   const [busy, setBusy] = useState(false);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
   const documentInputRef = useRef<HTMLInputElement>(null);
-  // Mirror of `draft` for the unmount cleanup, which can't read render
-  // state. Kept in sync below so navigating away with a staged-but-unsent
-  // attachment GCs the orphaned object.
-  const draftRef = useRef<MediaDraft | null>(null);
+  // Mirror of `drafts` for the unmount cleanup, which can't read render
+  // state. Kept in sync below so navigating away with staged-but-unsent
+  // attachments GCs the orphaned objects.
+  const draftsRef = useRef<MediaDraft[]>([]);
   useEffect(() => {
-    draftRef.current = draft;
-  }, [draft]);
+    draftsRef.current = drafts;
+  }, [drafts]);
 
   // Best-effort GC of a staged object the user never sent. Fire-and-forget.
   const removeStaged = useCallback((path: string | undefined) => {
@@ -264,15 +270,15 @@ export function MessageComposer({
   }, []);
 
   // Tear down any live recording + timer on unmount so a mid-record
-  // navigation doesn't leak the mic, and GC a staged-but-unsent
-  // attachment so it doesn't orphan in the bucket.
+  // navigation doesn't leak the mic, and GC any staged-but-unsent
+  // attachments so they don't orphan in the bucket.
   useEffect(() => {
     return () => {
       clearTimer();
       cancelledRef.current = true;
       // stop() releases the mic stream + audio context inside opus-recorder.
       void recorderRef.current?.stop().catch(() => {});
-      removeStaged(draftRef.current?.path);
+      draftsRef.current.forEach((d) => removeStaged(d.path));
     };
   }, [clearTimer, removeStaged]);
 
@@ -312,6 +318,20 @@ export function MessageComposer({
         openInteractiveBuilderRef.current(qr.interactive_payload);
         return;
       }
+      if (qr.image_url) {
+        // Stage it exactly like a freshly-uploaded attachment (same
+        // preview/caption/send UI) — `path: ""` is deliberate: it's a
+        // reusable library asset in the `product-images` bucket, not an
+        // ephemeral chat-media upload, so discard/unmount/send-failure
+        // must never try to GC it (removeStaged/deleteAccountMedia both
+        // no-op on an empty path). Picking one replaces any staged batch —
+        // it's a deliberate "send this instead" action, not an addition.
+        draftsRef.current.forEach((d) => removeStaged(d.path));
+        setDrafts([{ kind: "image", mediaUrl: qr.image_url, path: "", filename: qr.title }]);
+        setDraftCaption(qr.content_text ?? "");
+        setText("");
+        return;
+      }
       const body = qr.content_text ?? "";
       setText(body);
       requestAnimationFrame(() => {
@@ -323,7 +343,7 @@ export function MessageComposer({
         }
       });
     },
-    [adjustHeight],
+    [adjustHeight, removeStaged],
   );
 
   const handleKeyDown = useCallback(
@@ -516,6 +536,15 @@ export function MessageComposer({
         openInteractiveBuilder(qr.interactive_payload);
         return;
       }
+      if (qr.image_url) {
+        // Same reasoning as the slash-menu path above: reusable library
+        // asset, `path: ""` so it's never mistaken for an ephemeral
+        // chat-media upload and GC'd. Replaces any staged batch.
+        draftsRef.current.forEach((d) => removeStaged(d.path));
+        setDrafts([{ kind: "image", mediaUrl: qr.image_url, path: "", filename: qr.title }]);
+        setDraftCaption(qr.content_text ?? "");
+        return;
+      }
       const body = qr.content_text ?? "";
       // Separate the snippet from any existing draft with a newline so the
       // words don't run together ("Thanks" + "we'll…" → "Thankswe'll…").
@@ -531,66 +560,87 @@ export function MessageComposer({
         }
       });
     },
-    [openInteractiveBuilder, adjustHeight],
+    [openInteractiveBuilder, adjustHeight, removeStaged],
   );
 
-  // Upload a captured file to chat-media and stage it as a draft.
-  const stageUpload = useCallback(
-    async (kind: ComposerMediaKind, file: File) => {
+  // Upload one or more captured files to chat-media and queue them as
+  // drafts. Appends to any already-staged batch instead of replacing it,
+  // so pasting/attaching several images in a row stages all of them.
+  const stageFiles = useCallback(
+    async (kind: ComposerMediaKind, files: File[]) => {
       // Per-kind ceiling mirrors Meta's caps (image 5 MB, etc.) so we
       // reject before upload rather than orphaning an object that Meta
       // would then refuse at send.
       const max = MEDIA_MAX_BYTES_BY_KIND[kind];
-      if (file.size > max) {
-        toast.error(
-          `File is ${(file.size / 1024 / 1024).toFixed(1)} MB — ${kind} limit is ${Math.round(
-            max / 1024 / 1024,
-          )} MB.`,
-        );
-        return;
-      }
+      const valid = files.filter((file) => {
+        if (file.size > max) {
+          toast.error(
+            `File is ${(file.size / 1024 / 1024).toFixed(1)} MB — ${kind} limit is ${Math.round(
+              max / 1024 / 1024,
+            )} MB.`,
+          );
+          return false;
+        }
+        return true;
+      });
+      if (valid.length === 0) return;
       setBusy(true);
       try {
-        const { publicUrl, path } = await uploadAccountMedia(CHAT_MEDIA_BUCKET, file);
-        // Replacing an existing draft? GC the previous object first.
-        removeStaged(draftRef.current?.path);
-        setDraft({ kind, mediaUrl: publicUrl, path, filename: file.name, caption: "" });
+        const uploaded = await Promise.all(
+          valid.map((file) => uploadAccountMedia(CHAT_MEDIA_BUCKET, file)),
+        );
+        const newDrafts: MediaDraft[] = uploaded.map(({ publicUrl, path }, i) => ({
+          kind,
+          mediaUrl: publicUrl,
+          path,
+          filename: valid[i].name,
+        }));
+        // Starting a new batch with text already typed? Carry it over as
+        // the shared caption instead of just hiding it behind the
+        // attachment preview (that text would otherwise never get sent).
+        if (draftsRef.current.length === 0 && text.trim()) {
+          setDraftCaption(text.trim());
+          setText("");
+        }
+        setDrafts((prev) => [...prev, ...newDrafts]);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Upload failed.");
       } finally {
         setBusy(false);
       }
     },
-    [removeStaged],
+    [text],
   );
 
   const handlePicked = useCallback(
-    (kind: "image" | "video" | "document", file: File | undefined) => {
-      if (file) void stageUpload(kind, file);
+    (kind: "image" | "video" | "document", fileList: FileList | null) => {
+      if (fileList && fileList.length > 0) void stageFiles(kind, Array.from(fileList));
     },
-    [stageUpload],
+    [stageFiles],
   );
 
   // Pasting a screenshot or copied image (Ctrl+V) stages it exactly like
   // the attach-menu picker, instead of forcing agents through the file
   // dialog for something a normal WhatsApp client handles natively.
+  // Doesn't bail when a batch is already staged — pasting again queues
+  // more images instead of being silently ignored.
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-      if (inputsDisabled || busy || draft) return;
+      if (inputsDisabled || busy) return;
       const items = e.clipboardData?.items;
       if (!items) return;
+      const files: File[] = [];
       for (const item of items) {
         if (item.kind === "file" && item.type.startsWith("image/")) {
           const file = item.getAsFile();
-          if (file) {
-            e.preventDefault();
-            void stageUpload("image", file);
-          }
-          return;
+          if (file) files.push(file);
         }
       }
+      if (files.length === 0) return;
+      e.preventDefault();
+      void stageFiles("image", files);
     },
-    [inputsDisabled, busy, draft, stageUpload],
+    [inputsDisabled, busy, stageFiles],
   );
 
   // ---- Voice recording (client-side Ogg/Opus, no server transcode) ---
@@ -612,15 +662,14 @@ export function MessageComposer({
       setBusy(true);
       try {
         const { publicUrl, path } = await uploadAccountMedia(CHAT_MEDIA_BUCKET, file);
-        removeStaged(draftRef.current?.path);
-        setDraft({ kind: "audio", mediaUrl: publicUrl, path, filename: file.name, caption: "" });
+        setDrafts((prev) => [...prev, { kind: "audio", mediaUrl: publicUrl, path, filename: file.name }]);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Upload failed.");
       } finally {
         setBusy(false);
       }
     },
-    [removeStaged],
+    [],
   );
 
   const startRecording = useCallback(async () => {
@@ -680,33 +729,54 @@ export function MessageComposer({
 
   // ---- Draft send / discard -----------------------------------------
 
-  const sendDraft = useCallback(() => {
-    if (!draft || busy) return;
-    onSendMedia({
-      kind: draft.kind,
-      mediaUrl: draft.mediaUrl,
-      path: draft.path,
-      // Audio takes no caption (Meta rejects it). Everything else: the
-      // trimmed caption, or undefined when blank.
-      caption:
-        draft.kind === "audio" ? undefined : draft.caption.trim() || undefined,
-      filename: draft.kind === "document" ? draft.filename : undefined,
-      replyToId: replyTo?.id,
-    });
-    // The object is now owned by the sent message — clear without GC.
-    setDraft(null);
+  // WhatsApp has no multi-image "album" message — each staged file goes
+  // out as its own send. The shared caption rides on the last non-audio
+  // one (matches how a WhatsApp client itself shows a caption typed under
+  // several selected photos), and the reply-to context only on the first
+  // so the quoted bubble doesn't repeat down the batch.
+  const sendDrafts = useCallback(async () => {
+    if (drafts.length === 0 || busy) return;
+    const toSend = drafts;
+    const caption = draftCaption.trim();
+    const replyToId = replyTo?.id;
+    // Clear immediately — sends continue in the background below — so the
+    // composer is ready for the next message right away.
+    setDrafts([]);
+    setDraftCaption("");
     onClearReply?.();
-  }, [draft, busy, onSendMedia, replyTo?.id, onClearReply]);
+    for (let i = 0; i < toSend.length; i++) {
+      const d = toSend[i];
+      // The last non-audio item still ahead in the queue gets the caption.
+      const isLastSendable =
+        d.kind !== "audio" && !toSend.slice(i + 1).some((rest) => rest.kind !== "audio");
+      await onSendMedia({
+        kind: d.kind,
+        mediaUrl: d.mediaUrl,
+        path: d.path,
+        caption: isLastSendable ? caption || undefined : undefined,
+        filename: d.kind === "document" ? d.filename : undefined,
+        replyToId: i === 0 ? replyToId : undefined,
+      });
+    }
+  }, [drafts, busy, draftCaption, onSendMedia, replyTo?.id, onClearReply]);
 
-  // Discard GCs the staged object — it was uploaded but never sent.
-  const discardDraft = useCallback(() => {
-    removeStaged(draft?.path);
-    setDraft(null);
-  }, [draft?.path, removeStaged]);
+  // Discard one staged file (GCs it — it was uploaded but never sent).
+  const discardDraftAt = useCallback(
+    (index: number) => {
+      setDrafts((prev) => {
+        removeStaged(prev[index]?.path);
+        return prev.filter((_, i) => i !== index);
+      });
+    },
+    [removeStaged],
+  );
 
-  const setCaption = useCallback((caption: string) => {
-    setDraft((d) => (d ? { ...d, caption } : d));
-  }, []);
+  // Discard the whole staged batch.
+  const discardAllDrafts = useCallback(() => {
+    draftsRef.current.forEach((d) => removeStaged(d.path));
+    setDrafts([]);
+    setDraftCaption("");
+  }, [removeStaged]);
 
   // ---- Render --------------------------------------------------------
 
@@ -744,14 +814,16 @@ export function MessageComposer({
         )
       )}
 
-      {/* Hidden file inputs driven by the attach menu. */}
+      {/* Hidden file inputs driven by the attach menu. Only the image
+          picker allows multiple — video/document stay one-at-a-time. */}
       <input
         ref={imageInputRef}
         type="file"
         accept={PICKER_ACCEPT.image}
+        multiple
         className="hidden"
         onChange={(e) => {
-          handlePicked("image", e.target.files?.[0]);
+          handlePicked("image", e.target.files);
           e.target.value = "";
         }}
       />
@@ -761,7 +833,7 @@ export function MessageComposer({
         accept={PICKER_ACCEPT.video}
         className="hidden"
         onChange={(e) => {
-          handlePicked("video", e.target.files?.[0]);
+          handlePicked("video", e.target.files);
           e.target.value = "";
         }}
       />
@@ -771,19 +843,21 @@ export function MessageComposer({
         accept={PICKER_ACCEPT.document}
         className="hidden"
         onChange={(e) => {
-          handlePicked("document", e.target.files?.[0]);
+          handlePicked("document", e.target.files);
           e.target.value = "";
         }}
       />
 
-      {draft ? (
+      {drafts.length > 0 ? (
         <MediaDraftPreview
-          draft={draft}
+          drafts={drafts}
+          caption={draftCaption}
           busy={busy}
           readOnly={readOnly}
-          onCaptionChange={setCaption}
-          onDiscard={discardDraft}
-          onSend={sendDraft}
+          onCaptionChange={setDraftCaption}
+          onRemove={discardDraftAt}
+          onDiscardAll={discardAllDrafts}
+          onSend={sendDrafts}
           t={t}
         />
       ) : recording ? (
@@ -972,7 +1046,7 @@ export function MessageComposer({
       {/* Hint sits outside the flex row so its height doesn't push
           `items-end` buttons below the textarea. Indented to line up
           under the textarea left edge. */}
-      {!draft && !recording && (
+      {drafts.length === 0 && !recording && (
         <p className="mt-1 pl-[8.25rem] text-[10px] text-muted-foreground">
           {t("draftHint")}
         </p>
@@ -1024,56 +1098,65 @@ export function MessageComposer({
 }
 
 /**
- * Staged-attachment preview with caption + send/discard. Declared at
- * module scope (not nested in MessageComposer) so React keeps it mounted
- * across the parent's re-renders — a nested component would remount the
- * caption input on every keystroke and drop focus.
+ * Staged-attachment(s) preview with one shared caption + send/discard.
+ * Declared at module scope (not nested in MessageComposer) so React keeps
+ * it mounted across the parent's re-renders — a nested component would
+ * remount the caption input on every keystroke and drop focus.
  */
 function MediaDraftPreview({
-  draft,
+  drafts,
+  caption,
   busy,
   readOnly,
   onCaptionChange,
-  onDiscard,
+  onRemove,
+  onDiscardAll,
   onSend,
   t,
 }: {
-  draft: MediaDraft;
+  drafts: MediaDraft[];
+  caption: string;
   busy: boolean;
   readOnly: boolean;
   onCaptionChange: (caption: string) => void;
-  onDiscard: () => void;
+  onRemove: (index: number) => void;
+  onDiscardAll: () => void;
   onSend: () => void;
   t: ReturnType<typeof useTranslations>;
 }) {
+  const single = drafts.length === 1 ? drafts[0] : null;
+  // Audio never takes a caption (Meta rejects it) — hide the input only
+  // when the whole batch is audio, since the caption would have nowhere
+  // to land.
+  const showCaption = drafts.some((d) => d.kind !== "audio");
+
   return (
     <div className="rounded-xl border border-border bg-muted/40 p-3">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          {draft.kind === "image" && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={draft.mediaUrl}
-              alt={draft.filename}
-              className="max-h-40 rounded-lg object-cover"
-            />
-          )}
-          {draft.kind === "video" && (
-            <video src={draft.mediaUrl} controls className="max-h-40 rounded-lg" />
-          )}
-          {draft.kind === "audio" && (
-            <audio src={draft.mediaUrl} controls className="w-full" />
-          )}
-          {draft.kind === "document" && (
-            <div className="flex items-center gap-2 text-sm text-foreground">
-              <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
-              <span className="truncate">{draft.filename}</span>
+          {single ? (
+            <MediaDraftThumb draft={single} large />
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {drafts.map((d, i) => (
+                <div key={d.path || `${d.mediaUrl}-${i}`} className="relative">
+                  <MediaDraftThumb draft={d} />
+                  <button
+                    type="button"
+                    onClick={() => onRemove(i)}
+                    aria-label={t("removeAttachment")}
+                    className="absolute -right-1.5 -top-1.5 rounded-full bg-background p-0.5 text-muted-foreground shadow hover:text-foreground"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
             </div>
           )}
         </div>
         <button
           type="button"
-          onClick={onDiscard}
+          onClick={onDiscardAll}
           aria-label={t("removeAttachment")}
           className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
         >
@@ -1082,9 +1165,9 @@ function MediaDraftPreview({
       </div>
 
       <div className="mt-2 flex items-end gap-2">
-        {draft.kind !== "audio" && (
+        {showCaption && (
           <input
-            value={draft.caption}
+            value={caption}
             maxLength={MEDIA_CAPTION_MAX}
             onChange={(e) => onCaptionChange(e.target.value)}
             onKeyDown={(e) => {
@@ -1105,12 +1188,52 @@ function MediaDraftPreview({
           onClick={onSend}
           className={cn(
             "h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40",
-            draft.kind === "audio" && "ml-auto",
+            !showCaption && "ml-auto",
           )}
         >
           <Send className="h-4 w-4" />
         </GatedButton>
       </div>
+    </div>
+  );
+}
+
+/** One staged attachment's thumbnail — `large` renders the original
+ *  single-attachment size, otherwise a small grid tile for a multi-file
+ *  batch. */
+function MediaDraftThumb({ draft, large = false }: { draft: MediaDraft; large?: boolean }) {
+  if (draft.kind === "image") {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={draft.mediaUrl}
+        alt={draft.filename}
+        className={large ? "max-h-40 rounded-lg object-cover" : "h-20 w-20 rounded-lg object-cover"}
+      />
+    );
+  }
+  if (draft.kind === "video") {
+    return (
+      <video
+        src={draft.mediaUrl}
+        controls={large}
+        className={large ? "max-h-40 rounded-lg" : "h-20 w-20 rounded-lg object-cover"}
+      />
+    );
+  }
+  if (draft.kind === "audio") {
+    return <audio src={draft.mediaUrl} controls className={large ? "w-full" : "max-w-[200px]"} />;
+  }
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-2 text-sm text-foreground",
+        !large &&
+          "h-20 w-20 flex-col justify-center rounded-lg bg-muted p-1 text-center text-[10px]",
+      )}
+    >
+      <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
+      <span className={large ? "truncate" : "line-clamp-2 break-all"}>{draft.filename}</span>
     </div>
   );
 }
