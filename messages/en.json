@@ -21,6 +21,7 @@
     "notifications": "Notifications",
     "contacts": "Contacts",
     "reports": "Reports",
+    "profit": "Profit",
     "broadcasts": "Broadcasts",
     "automations": "Automations",
     "flows": "Flows",
@@ -47,6 +48,7 @@
     "notifications": "Notifications",
     "contacts": "Contacts",
     "reports": "Reports",
+    "profit": "Profit",
     "broadcasts": "Broadcasts",
     "automations": "Automations",
     "settings": "Settings",
@@ -150,6 +152,7 @@
       "showContactPanel": "Show contact panel",
       "hideContact": "Hide contact",
       "showContact": "Show contact",
+      "call": "Call",
       "refresh": "Refresh",
       "refreshConversation": "Refresh conversation",
       "status": "Status",
@@ -197,6 +200,7 @@
       "addEmoji": "Add emoji",
       "addCaption": "Add a caption…",
       "removeAttachment": "Remove attachment",
+      "dropFilesHint": "Drop files to attach them",
       "moreActions": "More",
       "interactiveMessage": "Interactive message",
       "quickReplies": "Quick replies",
@@ -584,7 +588,12 @@
       "sendPhoto": "Send Shalom receipt",
       "photoTooLarge": "That photo is over 5 MB",
       "photoSent": "Receipt sent to the customer",
-      "photoSendFailed": "Couldn't send the receipt photo"
+      "photoSendFailed": "Couldn't send the receipt photo",
+      "shalomOrderNumber": "Shalom order number",
+      "shalomOrderCode": "Shalom order code",
+      "shalomLastStatus": "Shalom status",
+      "shalomLastCheckedAt": "Last checked",
+      "shalomLastError": "Last check failed"
     },
     "shipmentQuickForm": {
       "title": "Complete the delivery details",
@@ -618,6 +627,34 @@
         "title": "Sale",
         "value": "Amount",
         "currency": "Currency"
+      }
+    }
+  },
+  "Profit": {
+    "page": {
+      "title": "Profit",
+      "subtitle": "Daily margin: sales margin from the VENTAS sheet minus that day's Meta ad spend.",
+      "from": "From",
+      "to": "To",
+      "presetLast7": "Last 7 days",
+      "presetThisMonth": "This month",
+      "loading": "Loading…",
+      "noData": "No data for this period.",
+      "notConfigured": "The sales sheet isn't connected yet — publish the VENTAS tab as CSV (File > Share > Publish to web) and set VENTAS_SHEET_CSV_URL.",
+      "adsNotConnected": "No Meta ad account is connected — ad spend will show as 0. Connect it under Studio > Connections.",
+      "toastFailedLoad": "Failed to load profit data",
+      "kpiVentas": "Sales",
+      "kpiOrders": "{count} {count, plural, =1 {order} other {orders}}",
+      "kpiMargenBruto": "Gross margin",
+      "kpiGastoAds": "Ad spend",
+      "kpiMargenNeto": "Net margin",
+      "table": {
+        "date": "Date",
+        "orders": "Orders",
+        "ventas": "Sales",
+        "margenBruto": "Gross margin",
+        "gastoAds": "Ad spend",
+        "margenNeto": "Net margin"
       }
     }
   },
@@ -1103,6 +1140,7 @@
         "varKeyHelp": "Interpolate in downstream prompts and handoff notes with",
         "advanceAfterCapture": "After capturing, advance to",
         "internalNote": "Internal note (for the agent picking up)",
+        "shipmentStatusReplyHelp": "Looks up the contact's most recent shipment and replies with its status as plain text, then advances. No config needed beyond the next node below.",
         "endNodeHelp": "Terminal node. When the runner reaches this node the run is marked complete. No config needed.",
         "bodyText": "Body text",
         "footerText": "Footer (optional, 60 chars)",
@@ -1285,7 +1323,7 @@
     },
     "invite": {
       "inviteCreated": "Invite created",
-      "inviteCreatedDesc": "Share this link with your new teammate. They'll be able to sign up (or sign in) and join the account as <bold>{role}</bold>. The link is valid for <bold>{days} {days, plural, =1 {day} other {days}}</bold>.",
+      "inviteCreatedDesc": "Share this link with your new teammate. Only <bold>{email}</bold> can accept it — signing up or joining with any other address is rejected. They'll join as <bold>{role}</bold>. The link is valid for <bold>{days} {days, plural, =1 {day} other {days}}</bold>.",
       "inviteLink": "Invite link",
       "copy": "Copy",
       "saveLinkNow": "Save this link now.",
@@ -1293,7 +1331,11 @@
       "sendViaWhatsApp": "Send via WhatsApp",
       "done": "Done",
       "dialogTitle": "Invite a teammate",
-      "dialogDesc": "Generate a one-time invite link. Share it via WhatsApp, Slack, or any channel you like — no email service required.",
+      "dialogDesc": "Generate a one-time invite link locked to one email address. Share it via WhatsApp, Slack, or any channel you like — no email service required, but only that address will ever be able to use it.",
+      "emailLabel": "Invitee's email",
+      "emailPlaceholder": "teammate@example.com",
+      "emailHint": "The link only works for this exact address — even someone who gets hold of the URL can't use it to sign up as anyone else.",
+      "emailInvalid": "Enter a valid email address",
       "roleLabel": "Role",
       "validForLabel": "Link valid for",
       "days1": "1 day",

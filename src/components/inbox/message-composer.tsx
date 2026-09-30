@@ -635,6 +635,67 @@ export function MessageComposer({
     [stageFiles],
   );
 
+  // Dropping files from the OS (e.g. selecting several in Explorer/Finder
+  // and dragging them in) stages the whole batch in one go — the same
+  // pain point as the video/document picker being one-at-a-time, but for
+  // agents who'd rather drag than click through the attach menu. Files are
+  // grouped by kind since each staged item still needs its own kind tag.
+  const [dragOver, setDragOver] = useState(false);
+  const dragCounterRef = useRef(0);
+
+  const classifyDroppedFile = useCallback((file: File): ComposerMediaKind => {
+    if (file.type.startsWith("image/")) return "image";
+    if (file.type.startsWith("video/")) return "video";
+    if (file.type.startsWith("audio/")) return "audio";
+    return "document";
+  }, []);
+
+  const handleDragEnter = useCallback(
+    (e: React.DragEvent) => {
+      if (inputsDisabled || busy) return;
+      if (!e.dataTransfer.types.includes("Files")) return;
+      e.preventDefault();
+      dragCounterRef.current += 1;
+      setDragOver(true);
+    },
+    [inputsDisabled, busy],
+  );
+
+  const handleDragOver = useCallback(
+    (e: React.DragEvent) => {
+      if (inputsDisabled || busy) return;
+      if (!e.dataTransfer.types.includes("Files")) return;
+      e.preventDefault();
+    },
+    [inputsDisabled, busy],
+  );
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
+    if (dragCounterRef.current === 0) setDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      dragCounterRef.current = 0;
+      setDragOver(false);
+      if (inputsDisabled || busy) return;
+      const files = Array.from(e.dataTransfer.files ?? []);
+      if (files.length === 0) return;
+      e.preventDefault();
+      const byKind = new Map<ComposerMediaKind, File[]>();
+      for (const file of files) {
+        const kind = classifyDroppedFile(file);
+        byKind.set(kind, [...(byKind.get(kind) ?? []), file]);
+      }
+      for (const [kind, kindFiles] of byKind) {
+        void stageFiles(kind, kindFiles);
+      }
+    },
+    [inputsDisabled, busy, classifyDroppedFile, stageFiles],
+  );
+
   // Pasting a screenshot or copied image (Ctrl+V) stages it exactly like
   // the attach-menu picker, instead of forcing agents through the file
   // dialog for something a normal WhatsApp client handles natively.
@@ -803,7 +864,18 @@ export function MessageComposer({
   // ---- Render --------------------------------------------------------
 
   return (
-    <div className="border-t border-border bg-card p-3">
+    <div
+      className="relative border-t border-border bg-card p-3"
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {dragOver && (
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-background/90">
+          <p className="text-sm font-medium text-primary">{t("dropFilesHint")}</p>
+        </div>
+      )}
       {replyTo && (
         <div className="mb-2">
           <ReplyQuote
@@ -836,8 +908,8 @@ export function MessageComposer({
         )
       )}
 
-      {/* Hidden file inputs driven by the attach menu. Only the image
-          picker allows multiple — video/document stay one-at-a-time. */}
+      {/* Hidden file inputs driven by the attach menu — all three allow
+          selecting several files at once. */}
       <input
         ref={imageInputRef}
         type="file"
@@ -853,6 +925,7 @@ export function MessageComposer({
         ref={videoInputRef}
         type="file"
         accept={PICKER_ACCEPT.video}
+        multiple
         className="hidden"
         onChange={(e) => {
           handlePicked("video", e.target.files);
@@ -863,6 +936,7 @@ export function MessageComposer({
         ref={documentInputRef}
         type="file"
         accept={PICKER_ACCEPT.document}
+        multiple
         className="hidden"
         onChange={(e) => {
           handlePicked("document", e.target.files);
