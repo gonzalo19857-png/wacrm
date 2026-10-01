@@ -185,6 +185,15 @@ export function MessageComposer({
   const [sending, setSending] = useState(false);
   const [drafting, setDrafting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Mirror of `text` for stageFiles below, which carries the draft over to
+  // the attachment caption only after its upload resolves. Reading the
+  // closed-over `text` param at that point would snapshot whatever was
+  // typed at paste-time and silently drop anything typed while the upload
+  // was still in flight — the ref always has the latest value instead.
+  const textRef = useRef(text);
+  useEffect(() => {
+    textRef.current = text;
+  }, [text]);
   // Populated once `openInteractiveBuilder` is defined below (see the
   // effect next to it) — lets the slash-menu handler above call it
   // without a declaration-order problem in this component body.
@@ -614,8 +623,10 @@ export function MessageComposer({
         // Starting a new batch with text already typed? Carry it over as
         // the shared caption instead of just hiding it behind the
         // attachment preview (that text would otherwise never get sent).
-        if (draftsRef.current.length === 0 && text.trim()) {
-          setDraftCaption(text.trim());
+        // Reads the ref (not the `text` param) so anything typed while the
+        // upload above was still in flight is included, not dropped.
+        if (draftsRef.current.length === 0 && textRef.current.trim()) {
+          setDraftCaption(textRef.current.trim());
           setText("");
         }
         setDrafts((prev) => [...prev, ...newDrafts]);
@@ -625,7 +636,7 @@ export function MessageComposer({
         setBusy(false);
       }
     },
-    [text],
+    [],
   );
 
   const handlePicked = useCallback(
@@ -700,16 +711,20 @@ export function MessageComposer({
   // the attach-menu picker, instead of forcing agents through the file
   // dialog for something a normal WhatsApp client handles natively.
   // Doesn't bail when a batch is already staged — pasting again queues
-  // more images instead of being silently ignored.
+  // more images instead of being silently ignored. Doesn't bail on `busy`
+  // either: stageFiles appends via a functional update, so a paste fired
+  // while an earlier one is still uploading safely queues too, instead of
+  // being dropped with no feedback (which is what made back-to-back pastes
+  // look like "only one image at a time" worked).
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-      if (inputsDisabled || busy) return;
+      if (inputsDisabled) return;
       const files = extractPastedImages(e);
       if (files.length === 0) return;
       e.preventDefault();
       void stageFiles("image", files);
     },
-    [inputsDisabled, busy, stageFiles],
+    [inputsDisabled, stageFiles],
   );
 
   // Once a batch is staged the textarea unmounts (the draft preview takes
@@ -717,13 +732,13 @@ export function MessageComposer({
   // preview's own caption input also accepts pasted images.
   const handleCaptionPaste = useCallback(
     (e: React.ClipboardEvent<HTMLInputElement>) => {
-      if (inputsDisabled || busy) return;
+      if (inputsDisabled) return;
       const files = extractPastedImages(e);
       if (files.length === 0) return;
       e.preventDefault();
       void stageFiles("image", files);
     },
-    [inputsDisabled, busy, stageFiles],
+    [inputsDisabled, stageFiles],
   );
 
   // ---- Voice recording (client-side Ogg/Opus, no server transcode) ---
