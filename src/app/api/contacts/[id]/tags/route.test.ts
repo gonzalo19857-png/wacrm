@@ -132,7 +132,7 @@ beforeEach(() => {
   mocks.sendNewSaleTelegramAlert.mockReset();
   mocks.sendPurchaseEvent.mockReset();
   mocks.loadConversionsConfig.mockReset();
-  mocks.loadConversionsConfig.mockResolvedValue({ datasetId: 'dataset-1', accessToken: 'token-1' });
+  mocks.loadConversionsConfig.mockResolvedValue({ datasetId: 'dataset-1', accessToken: 'token-1', pageId: 'page-1' });
   mocks.supabaseAdmin.mockReset();
   mocks.supabaseAdmin.mockReturnValue(fakeDb({}));
   mocks.afterCallbacks = [];
@@ -263,7 +263,7 @@ describe('/api/contacts/[id]/tags — sale tags (migration 045)', () => {
     const db = fakeDb({
       tags: { name: 'Venta', is_sale_tag: true },
       accounts: { default_currency: 'PEN' },
-      contacts: { phone: '51999999999' },
+      contacts: { phone: '51999999999', ctwa_clid: 'clid-1' },
       whatsapp_config: { waba_id: 'waba-1' },
     });
     mocks.requireRole.mockResolvedValue({ ...context, supabase: db });
@@ -275,9 +275,11 @@ describe('/api/contacts/[id]/tags — sale tags (migration 045)', () => {
     await flushAfter();
 
     expect(mocks.sendPurchaseEvent).toHaveBeenCalledWith({
-      config: { datasetId: 'dataset-1', accessToken: 'token-1' },
+      config: { datasetId: 'dataset-1', accessToken: 'token-1', pageId: 'page-1' },
       phone: '51999999999',
       wabaId: 'waba-1',
+      pageId: 'page-1',
+      ctwaClid: 'clid-1',
       value: 147.9,
       currency: 'PEN',
     });
@@ -286,7 +288,7 @@ describe('/api/contacts/[id]/tags — sale tags (migration 045)', () => {
   it('sends a Conversions API Purchase event WITHOUT a value when no price was registered', async () => {
     const db = fakeDb({
       tags: { name: 'Venta', is_sale_tag: true },
-      contacts: { phone: '51999999999' },
+      contacts: { phone: '51999999999', ctwa_clid: 'clid-1' },
       whatsapp_config: { waba_id: 'waba-1' },
     });
     mocks.requireRole.mockResolvedValue({ ...context, supabase: db });
@@ -299,11 +301,46 @@ describe('/api/contacts/[id]/tags — sale tags (migration 045)', () => {
     // No `price` in the request — the event still fires (better than
     // losing the conversion entirely), just without value/currency.
     expect(mocks.sendPurchaseEvent).toHaveBeenCalledWith({
-      config: { datasetId: 'dataset-1', accessToken: 'token-1' },
+      config: { datasetId: 'dataset-1', accessToken: 'token-1', pageId: 'page-1' },
       phone: '51999999999',
       wabaId: 'waba-1',
+      pageId: 'page-1',
+      ctwaClid: 'clid-1',
     });
     expect(mocks.createSale).not.toHaveBeenCalled();
+  });
+
+  it('skips the Purchase event when the account has no page_id configured', async () => {
+    const db = fakeDb({
+      tags: { name: 'Venta', is_sale_tag: true },
+      contacts: { phone: '51999999999', ctwa_clid: 'clid-1' },
+      whatsapp_config: { waba_id: 'waba-1' },
+    });
+    mocks.requireRole.mockResolvedValue({ ...context, supabase: db });
+    mocks.supabaseAdmin.mockReturnValue(db);
+    mocks.add.mockResolvedValue({ added: true, dispatched: true });
+    mocks.loadConversionsConfig.mockResolvedValue({ datasetId: 'dataset-1', accessToken: 'token-1', pageId: null });
+
+    await POST(request('POST', { tag_id: 'tag-1' }), params);
+    await flushAfter();
+
+    expect(mocks.sendPurchaseEvent).not.toHaveBeenCalled();
+  });
+
+  it('skips the Purchase event when the contact has no ctwa_clid (not ad-originated)', async () => {
+    const db = fakeDb({
+      tags: { name: 'Venta', is_sale_tag: true },
+      contacts: { phone: '51999999999', ctwa_clid: null },
+      whatsapp_config: { waba_id: 'waba-1' },
+    });
+    mocks.requireRole.mockResolvedValue({ ...context, supabase: db });
+    mocks.supabaseAdmin.mockReturnValue(db);
+    mocks.add.mockResolvedValue({ added: true, dispatched: true });
+
+    await POST(request('POST', { tag_id: 'tag-1' }), params);
+    await flushAfter();
+
+    expect(mocks.sendPurchaseEvent).not.toHaveBeenCalled();
   });
 
   it('does not send a Purchase event for a non-sale tag', async () => {

@@ -127,7 +127,7 @@ export async function POST(
           try {
             const db = supabaseAdmin();
             const [{ data: eventContact }, { data: config }, conversionsConfig] = await Promise.all([
-              db.from('contacts').select('phone').eq('id', contactId).maybeSingle(),
+              db.from('contacts').select('phone, ctwa_clid').eq('id', contactId).maybeSingle(),
               db
                 .from('whatsapp_config')
                 .select('waba_id')
@@ -145,10 +145,30 @@ export async function POST(
               );
               return;
             }
+            if (!conversionsConfig.pageId) {
+              console.warn(
+                '[contacts/tags] skipping Conversions API purchase event — account has no page_id configured (Settings → Sales)',
+              );
+              return;
+            }
+            // Meta hard-requires a real ctwa_clid on every WhatsApp
+            // business_messaging event — it's only captured when the
+            // contact's first inbound message carried a click-to-
+            // WhatsApp ad referral (see the webhook handler). Organic
+            // contacts have none, and Meta rejects the request outright
+            // without one, so there's nothing useful to send.
+            if (!eventContact.ctwa_clid) {
+              console.warn(
+                '[contacts/tags] skipping Conversions API purchase event — contact has no ctwa_clid (not ad-originated)',
+              );
+              return;
+            }
             await sendPurchaseEvent({
               config: conversionsConfig,
               phone: sanitizePhoneForMeta(eventContact.phone),
               wabaId: config.waba_id,
+              pageId: conversionsConfig.pageId,
+              ctwaClid: eventContact.ctwa_clid,
               ...(price !== null ? { value: price, currency } : {}),
             });
           } catch (err) {

@@ -1,0 +1,22 @@
+-- ============================================================
+-- 071_contacts_ctwa_clid.sql
+--
+-- Meta's Conversions API now hard-requires `ctwa_clid` (the
+-- Click-to-WhatsApp ad click id) in `user_data` for every
+-- `action_source: business_messaging` event on the WhatsApp channel —
+-- confirmed by reproducing the live rejection directly against the
+-- Graph API: {"error_subcode":2804071,"error_user_title":"Falta el
+-- identificador de clic a WhatsApp"}, then {"error_subcode":2804087}
+-- when a fabricated clid was supplied, meaning Meta validates it's a
+-- real click, not just present. The webhook already parses
+-- `message.referral.ctwa_clid` (src/app/api/whatsapp/webhook/route.ts)
+-- but only turned it into a boolean (`hasReferral`) for flow-trigger
+-- logic — the actual value was discarded, so every Purchase event
+-- src/lib/meta/conversions-api.ts ever sent for a WhatsApp-sourced
+-- sale was rejected by Meta. This column lets the webhook persist the
+-- first-touch click id per contact so sendPurchaseEvent can attach it.
+--
+-- Idempotent — safe to run multiple times.
+-- ============================================================
+
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS ctwa_clid text;

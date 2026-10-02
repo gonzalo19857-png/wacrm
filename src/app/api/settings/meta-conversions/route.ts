@@ -22,7 +22,7 @@ export async function GET() {
     const { supabase, accountId } = await getCurrentAccount()
     const { data, error } = await supabase
       .from('meta_conversions_configs')
-      .select('dataset_id, access_token, is_active')
+      .select('dataset_id, access_token, page_id, is_active')
       .eq('account_id', accountId)
       .maybeSingle()
 
@@ -34,6 +34,7 @@ export async function GET() {
     return NextResponse.json({
       configured: true,
       dataset_id: data.dataset_id,
+      page_id: data.page_id,
       has_token: !!data.access_token,
       is_active: data.is_active,
     })
@@ -59,6 +60,9 @@ export async function POST(request: Request) {
     const datasetId = typeof body.dataset_id === 'string' ? body.dataset_id.trim() : ''
     if (!datasetId) return bad('dataset_id is required')
 
+    const pageId = typeof body.page_id === 'string' ? body.page_id.trim() : ''
+    if (!pageId) return bad('page_id is required')
+
     const rawToken = typeof body.access_token === 'string' ? body.access_token.trim() : ''
     const isActive = body.is_active !== false
 
@@ -73,6 +77,7 @@ export async function POST(request: Request) {
     const row: Record<string, unknown> = {
       account_id: accountId,
       dataset_id: datasetId,
+      page_id: pageId,
       is_active: isActive,
     }
     if (rawToken) row.access_token = encrypt(rawToken)

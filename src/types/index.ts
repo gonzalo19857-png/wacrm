@@ -113,6 +113,11 @@ export interface Contact {
   /** Hydrated by queries that embed `contact_tags(tags(*))` (e.g. the
    *  Inbox conversation list, for tag filtering). Absent otherwise. */
   tags?: Tag[];
+  /** Click-to-WhatsApp ad click id from the first inbound message's
+   *  Meta `referral` (migration 071). Required by Meta's Conversions
+   *  API for any WhatsApp `business_messaging` Purchase event — see
+   *  `src/lib/meta/conversions-api.ts`. Null for organic contacts. */
+  ctwa_clid?: string | null;
 }
 
 export interface Tag {
@@ -699,6 +704,10 @@ export interface QuickReply {
   kind: QuickReplyKind;
   /** Set when `kind === 'text'`. */
   content_text?: string | null;
+  /** Optional image (migration 068) — only meaningful for `kind === 'text'`.
+   *  When set, picking this quick reply stages it as a media draft
+   *  (image + `content_text` as caption) instead of filling the textarea. */
+  image_url?: string | null;
   /** Set when `kind === 'interactive'`. */
   interactive_payload?: InteractiveMessagePayload | null;
   created_at: string;

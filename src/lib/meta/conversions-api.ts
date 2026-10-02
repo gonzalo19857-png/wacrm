@@ -36,6 +36,8 @@ export function hashPhone(phone: string): string {
 export interface MetaConversionsConfig {
   datasetId: string
   accessToken: string
+  /** Facebook Page connected to the account's WhatsApp number (migration 072) — see `SendPurchaseEventArgs.pageId`. */
+  pageId: string | null
 }
 
 /**
@@ -57,7 +59,7 @@ export async function loadConversionsConfig(
 ): Promise<MetaConversionsConfig | null> {
   const { data, error } = await db
     .from('meta_conversions_configs')
-    .select('dataset_id, access_token, is_active')
+    .select('dataset_id, access_token, page_id, is_active')
     .eq('account_id', accountId)
     .maybeSingle()
   if (error) {
@@ -65,7 +67,11 @@ export async function loadConversionsConfig(
     return null
   }
   if (!data || !data.is_active) return null
-  return { datasetId: data.dataset_id, accessToken: decrypt(data.access_token) }
+  return {
+    datasetId: data.dataset_id,
+    accessToken: decrypt(data.access_token),
+    pageId: data.page_id ?? null,
+  }
 }
 
 async function throwMetaError(response: Response, fallback: string): Promise<never> {
@@ -86,6 +92,24 @@ export interface SendPurchaseEventArgs {
   phone: string
   /** `whatsapp_config.waba_id` for the account whose number the sale came in on. */
   wabaId: string
+  /**
+   * ID of the Facebook Page connected to the WhatsApp number. Required
+   * by Meta as of the current API version — confirmed by reproducing
+   * the live rejection directly: omitting it fails with error_subcode
+   * 2804069 ("Falta el identificador de la página").
+   */
+  pageId: string
+  /**
+   * Click-to-WhatsApp ad click id, captured from the `referral` field
+   * on the inbound message that opened the conversation (see
+   * src/app/api/whatsapp/webhook/route.ts) and stored on
+   * `contacts.ctwa_clid` (migration 071). Also hard-required by Meta
+   * for `business_messaging`/whatsapp events — confirmed the same way
+   * (error_subcode 2804071 without it). Contacts that never arrived
+   * via a CTWA ad have no value here; the caller must skip sending
+   * rather than submit a request Meta will reject anyway.
+   */
+  ctwaClid: string
   /**
    * Sale amount. Omitted entirely (along with `currency`) when the
    * sale tag was added without a registered price — Meta still
@@ -108,7 +132,7 @@ export interface SendPurchaseEventArgs {
  * on a page with a browser pixel.
  */
 export async function sendPurchaseEvent(args: SendPurchaseEventArgs): Promise<void> {
-  const { config, phone, wabaId, value, currency, testEventCode } = args
+  const { config, phone, wabaId, pageId, ctwaClid, value, currency, testEventCode } = args
   const { datasetId, accessToken } = config
 
   const event: Record<string, unknown> = {
@@ -119,6 +143,8 @@ export async function sendPurchaseEvent(args: SendPurchaseEventArgs): Promise<vo
     user_data: {
       ph: [hashPhone(phone)],
       whatsapp_business_account_id: wabaId,
+      page_id: pageId,
+      ctwa_clid: ctwaClid,
     },
   }
   if (typeof value === 'number') {

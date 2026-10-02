@@ -72,6 +72,24 @@ interface WhatsAppMessage {
   button?: { text?: string; payload?: string }
   /** Present when the customer swipe-replies to one of our messages. */
   context?: { id: string }
+  /**
+   * Present when this message is the one that opened the conversation
+   * from a click-to-WhatsApp ad — Meta attaches it on that first
+   * inbound message only, not on every subsequent one. Used to skip
+   * the "reengagement" welcome-menu flow trigger for ad-originated
+   * contacts (see src/lib/flows/engine.ts findEntryFlow).
+   */
+  referral?: {
+    source_url?: string
+    source_id?: string
+    source_type?: string
+    headline?: string
+    body?: string
+    media_type?: string
+    image_url?: string
+    video_url?: string
+    ctwa_clid?: string
+  }
 }
 
 interface WhatsAppWebhookEntry {
@@ -740,6 +758,27 @@ async function processMessage(
   if (!contactOutcome) return
   const contactRecord = contactOutcome.contact
 
+  // Meta's Conversions API hard-requires `ctwa_clid` in `user_data` for
+  // any WhatsApp `business_messaging` event (see
+  // src/lib/meta/conversions-api.ts) — without it every Purchase event
+  // for a WhatsApp-sourced sale is rejected outright. Meta attaches
+  // `referral.ctwa_clid` only on the inbound message that opened the
+  // conversation from a click-to-WhatsApp ad, so it has to be captured
+  // here and persisted; first-touch only (never overwrite an existing
+  // value) so later organic messages in the same conversation can't
+  // clobber the ad click that actually brought this contact in.
+  if (message.referral?.ctwa_clid && !contactRecord.ctwa_clid) {
+    const { error: ctwaError } = await supabaseAdmin()
+      .from('contacts')
+      .update({ ctwa_clid: message.referral.ctwa_clid })
+      .eq('id', contactRecord.id)
+    if (ctwaError) {
+      console.error('[webhook] failed to persist ctwa_clid:', ctwaError)
+    } else {
+      contactRecord.ctwa_clid = message.referral.ctwa_clid
+    }
+  }
+
   // Find or create conversation
   const convResult = await findOrCreateConversation(
     accountId,
@@ -951,6 +990,11 @@ async function processMessage(
             meta_message_id: message.id,
           },
     isFirstInboundMessage,
+    hasReferral: Boolean(message.referral),
+    // Captured from `conversation` BEFORE bump_conversation_on_inbound
+    // (above) overwrote last_message_at with now() — this is the value
+    // as of right before this inbound arrived.
+    previousLastMessageAt: (conversation as { last_message_at?: string | null }).last_message_at ?? null,
   })
   const flowConsumed = flowResult.consumed
 

@@ -211,6 +211,7 @@ export function DealsSettings() {
   // supabase/migrations/067_meta_conversions_config.sql.
   // ------------------------------------------------------------
   const [metaDatasetId, setMetaDatasetId] = useState("");
+  const [metaPageId, setMetaPageId] = useState("");
   const [metaToken, setMetaToken] = useState("");
   const [metaTokenEdited, setMetaTokenEdited] = useState(false);
   const [hasStoredMetaToken, setHasStoredMetaToken] = useState(false);
@@ -225,6 +226,7 @@ export function DealsSettings() {
       const data = await res.json();
       if (data.configured) {
         setMetaDatasetId(data.dataset_id ?? "");
+        setMetaPageId(data.page_id ?? "");
         setHasStoredMetaToken(Boolean(data.has_token));
         setMetaActive(Boolean(data.is_active));
       }
@@ -242,6 +244,10 @@ export function DealsSettings() {
       toast.error(t("metaConversionsDatasetIdRequired"));
       return;
     }
+    if (!metaPageId.trim()) {
+      toast.error(t("metaConversionsPageIdRequired"));
+      return;
+    }
     setSavingMeta(true);
     try {
       const res = await fetch("/api/settings/meta-conversions", {
@@ -249,6 +255,7 @@ export function DealsSettings() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           dataset_id: metaDatasetId.trim(),
+          page_id: metaPageId.trim(),
           access_token: metaTokenEdited ? metaToken.trim() : undefined,
           is_active: metaActive,
         }),
@@ -538,6 +545,17 @@ export function DealsSettings() {
                   disabled={!canEditSettings}
                 />
                 <p className="text-xs text-muted-foreground">{t("metaConversionsDatasetIdHint")}</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-muted-foreground">{t("metaConversionsPageIdLabel")}</Label>
+                <Input
+                  value={metaPageId}
+                  onChange={(e) => setMetaPageId(e.target.value)}
+                  placeholder={t("metaConversionsPageIdPlaceholder")}
+                  disabled={!canEditSettings}
+                />
+                <p className="text-xs text-muted-foreground">{t("metaConversionsPageIdHint")}</p>
               </div>
 
               <div className="space-y-2">
