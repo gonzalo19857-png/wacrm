@@ -1,14 +1,16 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { CustomField, Tag } from '@/types';
 import { Button } from '@/components/ui/button';
+import { parseContactCsv } from '@/lib/contacts/parse-contact-csv';
 import {
   Users,
   Tags,
   Filter,
   Upload,
+  FileText,
   Loader2,
   ArrowRight,
   ArrowLeft,
@@ -91,6 +93,9 @@ export function Step2SelectAudience({
   const [loadingFields, setLoadingFields] = useState(false);
   const [estimatedCount, setEstimatedCount] = useState<number | null>(null);
   const [loadingCount, setLoadingCount] = useState(false);
+  const [csvFileName, setCsvFileName] = useState<string | null>(null);
+  const [csvError, setCsvError] = useState<string | null>(null);
+  const csvInputRef = useRef<HTMLInputElement>(null);
 
   // Tags are used both by the primary "Filter by Tags" audience type
   // AND by the exclude-list below — so always load once on mount.
@@ -213,6 +218,13 @@ export function Step2SelectAudience({
     fetchEstimatedCount();
   }, [fetchEstimatedCount]);
 
+  useEffect(() => {
+    if (audience.type !== 'csv') {
+      setCsvFileName(null);
+      setCsvError(null);
+    }
+  }, [audience.type]);
+
   function toggleTag(tagId: string) {
     const current = audience.tagIds ?? [];
     const updated = current.includes(tagId)
@@ -227,6 +239,37 @@ export function Step2SelectAudience({
       ? current.filter((id) => id !== tagId)
       : [...current, tagId];
     onUpdate({ ...audience, excludeTagIds: updated });
+  }
+
+  async function handleCsvFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const selected = e.target.files?.[0];
+    if (!selected) return;
+
+    const text = await selected.text();
+    const { rows } = parseContactCsv(text);
+
+    if (rows.length === 0) {
+      const hasPhoneHeader = text
+        .trim()
+        .split(/\r?\n/)[0]
+        ?.toLowerCase()
+        .includes('phone');
+      setCsvError(
+        hasPhoneHeader
+          ? t('selectAudience.errorCsvParse')
+          : t('selectAudience.errorCsvMissingPhone'),
+      );
+      setCsvFileName(null);
+      onUpdate({ ...audience, csvContacts: undefined });
+      return;
+    }
+
+    setCsvError(null);
+    setCsvFileName(selected.name);
+    onUpdate({
+      ...audience,
+      csvContacts: rows.map((r) => ({ phone: r.phone, name: r.name })),
+    });
   }
 
   function updateCustomField(patch: Partial<CustomFieldFilter>) {
@@ -387,6 +430,65 @@ export function Step2SelectAudience({
                 className="h-9 rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
               />
             </div>
+          )}
+        </div>
+      )}
+
+      {audience.type === 'csv' && (
+        <div className="space-y-3 rounded-xl border border-border bg-card/50 p-4">
+          <p className="text-sm font-medium text-foreground">
+            {t('selectAudience.uploadCsv')}
+          </p>
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => csvInputRef.current?.click()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') csvInputRef.current?.click();
+            }}
+            className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-5 text-center transition-all ${
+              csvFileName
+                ? 'border-primary/35 bg-primary/[0.04]'
+                : 'border-border/80 bg-background/40 hover:border-primary/40 hover:bg-background/70'
+            }`}
+          >
+            {csvFileName ? (
+              <>
+                <div className="flex size-10 items-center justify-center rounded-lg bg-primary/15 ring-1 ring-primary/25">
+                  <FileText className="size-5 text-primary" />
+                </div>
+                <p className="max-w-full truncate px-2 text-sm font-medium text-foreground">
+                  {csvFileName}
+                </p>
+                <span className="rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                  {t('selectAudience.csvContactsFound', {
+                    count: audience.csvContacts?.length ?? 0,
+                  })}
+                </span>
+              </>
+            ) : (
+              <>
+                <div className="flex size-10 items-center justify-center rounded-lg bg-muted/80 ring-1 ring-border/80">
+                  <Upload className="size-5 text-muted-foreground" />
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {t('selectAudience.uploadCsv')}
+                </p>
+              </>
+            )}
+          </div>
+          <input
+            ref={csvInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            onChange={handleCsvFile}
+            className="hidden"
+          />
+          <p className="text-xs text-muted-foreground">
+            {t('selectAudience.csvFormatDesc')}
+          </p>
+          {csvError && (
+            <p className="text-xs text-red-400">{csvError}</p>
           )}
         </div>
       )}
