@@ -179,6 +179,7 @@ function recipient(
 ) {
   return {
     id,
+    contact_id: `contact-${id}`,
     template_params: params,
     contact: phone ? { phone } : null,
   };
@@ -202,6 +203,7 @@ describe('planBroadcastResume', () => {
       'acct-1',
       'bc-1',
       'pending',
+      'user-1',
     );
 
     expect(writes.statusFilter).toEqual(['pending']);
@@ -211,11 +213,13 @@ describe('planBroadcastResume', () => {
     expect(plan.planned).toEqual([
       {
         recipientRowId: 'r1',
+        contactId: 'contact-r1',
         phone: '15551234567',
         params: ['A123', 'Friday'],
       },
       {
         recipientRowId: 'r2',
+        contactId: 'contact-r2',
         phone: '15559876543',
         params: ['B456', 'Monday'],
       },
@@ -239,6 +243,7 @@ describe('planBroadcastResume', () => {
       'acct-1',
       'bc-1',
       'failed',
+      'user-1',
     );
     expect(failedWrites.statusFilter).toEqual(['failed']);
 
@@ -255,6 +260,7 @@ describe('planBroadcastResume', () => {
       'acct-1',
       'bc-1',
       'all',
+      'user-1',
     );
     expect(allWrites.statusFilter).toEqual(['pending', 'failed']);
   });
@@ -273,6 +279,7 @@ describe('planBroadcastResume', () => {
       'acct-1',
       'bc-1',
       'pending',
+      'user-1',
     );
     expect(plan.planned.map((p) => p.params)).toEqual([[], []]);
   });
@@ -295,6 +302,7 @@ describe('planBroadcastResume', () => {
       'acct-1',
       'bc-1',
       'pending',
+      'user-1',
     );
 
     // Left 'pending', these would keep the broadcast in 'sending'
@@ -314,6 +322,7 @@ describe('planBroadcastResume', () => {
       'acct-1',
       'bc-1',
       'pending',
+      'user-1',
     );
     expect(plan.planned).toHaveLength(RESUME_MAX_PER_REQUEST);
     // Surfaced to the caller rather than silently dropped.
@@ -327,6 +336,7 @@ describe('planBroadcastResume', () => {
         'acct-1',
         'bc-1',
         'pending',
+        'user-1',
       ),
     ).rejects.toMatchObject({ status: 404 });
   });
@@ -338,6 +348,7 @@ describe('planBroadcastResume', () => {
         'acct-1',
         'bc-1',
         'failed',
+        'user-1',
       ),
     ).rejects.toBeInstanceOf(BroadcastError);
   });
@@ -362,6 +373,7 @@ describe('planBroadcastResume', () => {
       'acct-1',
       'bc-1',
       'pending',
+      'user-1',
     );
     expect(plan.templateRow?.language).toBe('en');
   });

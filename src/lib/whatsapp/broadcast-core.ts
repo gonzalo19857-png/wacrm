@@ -26,9 +26,14 @@ import {
   phoneVariants,
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils';
-import { resolveTemplateRow } from '@/lib/whatsapp/template-body';
+import {
+  resolveTemplateRow,
+  templateBodyParams,
+  templateContentText,
+} from '@/lib/whatsapp/template-body';
 import type { MessageTemplate } from '@/types';
 import { findOrCreateContact } from '@/lib/api/v1/contacts';
+import { findOrCreateConversation } from '@/lib/conversations/find-or-create';
 
 /** Thrown by createBroadcast on a caller-visible failure; route maps it. */
 export class BroadcastError extends Error {
@@ -58,12 +63,16 @@ export interface CreateBroadcastParams {
 
 interface PlannedRecipient {
   recipientRowId: string;
+  contactId: string;
   phone: string;
   params: string[];
 }
 
 export interface BroadcastPlan {
   broadcastId: string;
+  accountId: string;
+  /** Attributed as the conversation's `user_id` when one has to be created. */
+  configOwnerUserId: string;
   templateName: string;
   templateLanguage: string;
   phoneNumberId: string;
@@ -226,12 +235,19 @@ export async function createBroadcast(
   const planned: PlannedRecipient[] = createdRows.map(
     (row: { recipient_id: string; contact_id: string }) => {
       const r = byContact.get(row.contact_id)!;
-      return { recipientRowId: row.recipient_id, phone: r.phone, params: r.params };
+      return {
+        recipientRowId: row.recipient_id,
+        contactId: row.contact_id,
+        phone: r.phone,
+        params: r.params,
+      };
     }
   );
 
   return {
     broadcastId,
+    accountId,
+    configOwnerUserId: auditUserId,
     templateName,
     templateLanguage: resolvedTemplate.language,
     phoneNumberId: config.phone_number_id,
@@ -296,6 +312,49 @@ export async function deliverBroadcast(
           error_message: null,
         })
         .eq('id', recipient.recipientRowId);
+
+      // Mirror the send into the contact's conversation so it shows up
+      // in the Inbox — a broadcast send reaches Meta the same as any
+      // other template send, but until now nothing wrote it to
+      // `messages`, so the thread stayed silent about what the contact
+      // actually received. Best-effort: the Meta send already
+      // succeeded, so a failure here must not fail the broadcast.
+      try {
+        const outcome = await findOrCreateConversation(
+          plan.accountId,
+          plan.configOwnerUserId,
+          recipient.contactId
+        );
+        if (outcome) {
+          const bodyText = templateContentText(
+            plan.templateRow,
+            templateBodyParams(recipient.params)
+          );
+          await db.from('messages').insert({
+            conversation_id: outcome.conversation.id,
+            sender_type: 'agent',
+            content_type: 'template',
+            content_text: bodyText,
+            template_name: plan.templateName,
+            message_id: sentMessageId,
+            status: 'sent',
+          });
+          await db
+            .from('conversations')
+            .update({
+              last_message_text: bodyText || `[${plan.templateName}]`,
+              last_message_sender_type: 'agent',
+              last_message_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', outcome.conversation.id);
+        }
+      } catch (err) {
+        console.error(
+          '[broadcast-core] failed to record sent template in Inbox:',
+          err instanceof Error ? err.message : err
+        );
+      }
     } else {
       await db
         .from('broadcast_recipients')

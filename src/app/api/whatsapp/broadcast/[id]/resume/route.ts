@@ -86,7 +86,8 @@ export async function POST(
       supabase,
       accountId,
       id,
-      scope
+      scope,
+      userId
     );
 
     await markBroadcastSending(supabase, id);

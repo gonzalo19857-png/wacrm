@@ -482,6 +482,9 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
           .filter((r) => r.contact?.phone)
           .map((r) => ({
             phone: r.contact!.phone as string,
+            // Lets the route mirror a successful send into this
+            // contact's conversation so it shows up in the Inbox.
+            contactId: r.contact_id as string,
             // Read back off the row rather than re-resolved, so this
             // pass and any later resume send identical params.
             params: Array.isArray(r.template_params) ? r.template_params : [],

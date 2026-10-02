@@ -3,7 +3,12 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder'
-import { resolveTemplateRow } from '@/lib/whatsapp/template-body'
+import {
+  resolveTemplateRow,
+  templateBodyParams,
+  templateContentText,
+} from '@/lib/whatsapp/template-body'
+import { findOrCreateConversation } from '@/lib/conversations/find-or-create'
 import {
   sanitizePhoneForMeta,
   isValidE164,
@@ -56,6 +61,13 @@ interface NewRecipient {
    * sendTemplateMessage for the merge rules.
    */
   messageParams?: SendTimeParams
+  /**
+   * The recipient's `contacts.id`, when known. Lets a successful send
+   * be mirrored into that contact's conversation (see the send loop
+   * below) — without it the template reaches WhatsApp but never shows
+   * up in the Inbox.
+   */
+  contactId?: string
 }
 
 export async function POST(request: Request) {
@@ -64,9 +76,10 @@ export async function POST(request: Request) {
     // explicit that running broadcasts is a write operation and that
     // viewers are read-only.
     //
-    // This endpoint writes NOTHING to the database: it reads the config
-    // and template, then calls Meta directly. So unlike the rest of the
-    // app there was no RLS policy backstopping a missing role check —
+    // This endpoint reads the config and template, then calls Meta
+    // directly — the only persistence is the per-recipient message/
+    // conversation mirror below. So unlike the rest of the app there
+    // was no RLS policy backstopping a missing role check —
     // resolving `account_id` straight off the profile (which only needs
     // 'viewer') was the ONLY gate, and it let a viewer blast a template
     // to arbitrary phone numbers from the account's WhatsApp number.
@@ -217,6 +230,49 @@ export async function POST(request: Request) {
           whatsapp_message_id: sentMessageId,
         })
         sentCount++
+
+        // Mirror the send into the contact's conversation so it shows
+        // up in the Inbox. The template reached Meta regardless of
+        // what happens here, so a failure must not fail the send —
+        // best-effort, logged and moved on.
+        if (recipient.contactId) {
+          try {
+            const outcome = await findOrCreateConversation(
+              accountId,
+              userId,
+              recipient.contactId
+            )
+            if (outcome) {
+              const bodyText = templateContentText(
+                templateRow,
+                templateBodyParams(recipient.params, recipient.messageParams)
+              )
+              await supabase.from('messages').insert({
+                conversation_id: outcome.conversation.id,
+                sender_type: 'agent',
+                content_type: 'template',
+                content_text: bodyText,
+                template_name: template_name,
+                message_id: sentMessageId,
+                status: 'sent',
+              })
+              await supabase
+                .from('conversations')
+                .update({
+                  last_message_text: bodyText || `[${template_name}]`,
+                  last_message_sender_type: 'agent',
+                  last_message_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('id', outcome.conversation.id)
+            }
+          } catch (err) {
+            console.error(
+              '[broadcast] failed to record sent template in Inbox:',
+              err instanceof Error ? err.message : err
+            )
+          }
+        }
       } else {
         console.error(
           `Failed to send broadcast to ${recipient.phone}:`,
