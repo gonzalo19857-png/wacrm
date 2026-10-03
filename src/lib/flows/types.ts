@@ -177,19 +177,6 @@ export interface SetTagNodeConfig {
 export type EndNodeConfig = Record<string, never>;
 
 /**
- * Looks up the contact's most recent shipment (via
- * getOpenShipmentForContact — falls back to the most recent shipment
- * overall if none is open) and replies with its status as plain text,
- * then auto-advances like send_message. No static `text` field: the
- * message is computed per contact at send time, so there's nothing to
- * interpolate or author here.
- */
-export interface ShipmentStatusReplyNodeConfig {
-  /** Auto-advance target after the reply lands at Meta. */
-  next_node_key: string;
-}
-
-/**
  * Total union — every concrete node_type the v1 engine understands.
  * Add new node types here and the engine's switch will flag missing
  * cases via TypeScript's exhaustiveness check.
@@ -207,7 +194,6 @@ export type FlowNodeConfig =
   | { node_type: "condition"; config: ConditionNodeConfig }
   | { node_type: "set_tag"; config: SetTagNodeConfig }
   | { node_type: "handoff"; config: HandoffNodeConfig }
-  | { node_type: "shipment_status_reply"; config: ShipmentStatusReplyNodeConfig }
   | { node_type: "end"; config: EndNodeConfig };
 
 export type FlowNodeType = FlowNodeConfig["node_type"];
@@ -228,24 +214,10 @@ export interface KeywordTriggerConfig {
 // the no-empty-object-type lint rule.
 export type FirstInboundTriggerConfig = Record<string, never>;
 
-/**
- * Fires when a contact writes in with no Meta `referral` on the
- * message (i.e. they didn't come from a click-to-WhatsApp ad) AND
- * either it's their first-ever inbound message, or more than
- * `stale_after_hours` passed since the conversation's previous
- * message — the "show the welcome menu again" case for a returning
- * customer. No knobs beyond the threshold in v1.
- */
-export interface ReengagementTriggerConfig {
-  /** Hours of silence after which the menu reappears. Default 24. */
-  stale_after_hours?: number;
-}
-
 export type FlowTriggerConfig =
   | { trigger_type: "keyword"; config: KeywordTriggerConfig }
   | { trigger_type: "first_inbound_message"; config: FirstInboundTriggerConfig }
-  | { trigger_type: "manual"; config: Record<string, never> }
-  | { trigger_type: "reengagement"; config: ReengagementTriggerConfig };
+  | { trigger_type: "manual"; config: Record<string, never> };
 
 // ============================================================
 // DB-row shapes (read by the engine via supabaseAdmin)
@@ -262,11 +234,10 @@ export interface FlowRow {
   name: string;
   description: string | null;
   status: "draft" | "active" | "archived";
-  trigger_type: "keyword" | "first_inbound_message" | "manual" | "reengagement";
+  trigger_type: "keyword" | "first_inbound_message" | "manual";
   trigger_config:
     | KeywordTriggerConfig
     | FirstInboundTriggerConfig
-    | ReengagementTriggerConfig
     | Record<string, unknown>;
   entry_node_id: string | null;
   fallback_policy: FlowFallbackPolicy;
