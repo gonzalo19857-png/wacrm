@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type CSSProperties } from 'react';
 import { toast } from 'sonner';
-import { CircleDollarSign, Flame, Loader2, MapPin, Plus, Snowflake, Tag as TagIcon, X } from 'lucide-react';
+import { CalendarClock, CircleDollarSign, Flame, Loader2, MapPin, Plus, Snowflake, Tag as TagIcon, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
@@ -173,6 +173,23 @@ export function TagManager() {
     }
   }
 
+  async function toggleRecontactTag(tag: Tag) {
+    const next = !tag.is_recontact_tag;
+    setTags((prev) =>
+      prev.map((t) => (t.id === tag.id ? { ...t, is_recontact_tag: next } : t)),
+    );
+    const { error } = await supabase
+      .from('tags')
+      .update({ is_recontact_tag: next })
+      .eq('id', tag.id);
+    if (error) {
+      setTags((prev) =>
+        prev.map((t) => (t.id === tag.id ? { ...t, is_recontact_tag: !next } : t)),
+      );
+      toast.error(t('failedToUpdateTag'));
+    }
+  }
+
   // Cycles a tag's region through none -> Lima -> Provincia -> none.
   // Kept as a fixed 2-value cycle (rather than a free-text field) so
   // the values always match exactly what the live sheet's `set_region`
@@ -251,14 +268,14 @@ export function TagManager() {
                     key={tag.id}
                     className={cn(
                       'group inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors',
-                      (tag.is_sale_tag || tag.is_potential_tag || tag.is_dropped_tag) &&
+                      (tag.is_sale_tag || tag.is_potential_tag || tag.is_dropped_tag || tag.is_recontact_tag) &&
                         'ring-1 ring-offset-1 ring-offset-background',
                     )}
                     style={{
                       backgroundColor: `${tag.color}20`,
                       color: tag.color,
                       border: `1px solid ${tag.color}40`,
-                      ...(tag.is_sale_tag || tag.is_potential_tag || tag.is_dropped_tag
+                      ...(tag.is_sale_tag || tag.is_potential_tag || tag.is_dropped_tag || tag.is_recontact_tag
                         ? ({ '--tw-ring-color': tag.color } as CSSProperties)
                         : {}),
                     }}
@@ -324,6 +341,25 @@ export function TagManager() {
                       )}
                     >
                       <Snowflake className="size-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleRecontactTag(tag)}
+                      aria-label={
+                        tag.is_recontact_tag
+                          ? t('unmarkAsRecontactTagAria', { name: tag.name })
+                          : t('markAsRecontactTagAria', { name: tag.name })
+                      }
+                      title={
+                        tag.is_recontact_tag ? t('unmarkAsRecontactTag') : t('markAsRecontactTag')
+                      }
+                      aria-pressed={!!tag.is_recontact_tag}
+                      className={cn(
+                        'ml-0.5 rounded-full p-0.5 transition-opacity hover:bg-black/10 dark:hover:bg-white/10',
+                        tag.is_recontact_tag ? 'opacity-100' : 'opacity-40 hover:opacity-80',
+                      )}
+                    >
+                      <CalendarClock className="size-3" />
                     </button>
                     <button
                       type="button"

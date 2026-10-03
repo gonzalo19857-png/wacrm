@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
+import { addContactTag, deleteContactTag, type RecontactSchedule } from '@/lib/contacts/tag-api';
 import { SalePriceDialog, type SaleRegion } from '@/components/contacts/sale-price-dialog';
+import { RecontactScheduleDialog } from '@/components/contacts/recontact-schedule-dialog';
 import { ShipmentQuickFormDialog } from '@/components/contacts/shipment-quick-form-dialog';
 import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency } from '@/lib/currency';
@@ -88,6 +89,10 @@ export function ContactDetailView({
   // opens the price prompt instead of toggling the tag immediately.
   const [salePrompt, setSalePrompt] = useState<{ id: string; name: string } | null>(null);
   const [savingSale, setSavingSale] = useState(false);
+  // Set when the tag just clicked is a "recontact tag" (migration 077)
+  // — opens the date/template prompt instead of toggling immediately.
+  const [recontactPrompt, setRecontactPrompt] = useState<{ id: string; name: string } | null>(null);
+  const [savingRecontact, setSavingRecontact] = useState(false);
   // Opened right after a "Venta" tag is confirmed with region ===
   // "provincia" — mirrors contact-sidebar.tsx's inbox-side prompt.
   const [shipmentPrompt, setShipmentPrompt] = useState(false);
@@ -253,6 +258,10 @@ export function ContactDetailView({
         setSalePrompt({ id: tag.id, name: tag.name });
         return;
       }
+      if (tag?.is_recontact_tag) {
+        setRecontactPrompt({ id: tag.id, name: tag.name });
+        return;
+      }
     }
 
     // Optimistic toggle — flip local state immediately instead of
@@ -299,6 +308,22 @@ export function ContactDetailView({
       toast.error(tSaleTag('toastFailed'));
     } finally {
       setSavingSale(false);
+    }
+  }
+
+  async function confirmRecontact(schedule: RecontactSchedule) {
+    if (!contactId || !recontactPrompt) return;
+    setSavingRecontact(true);
+    try {
+      await addContactTag(contactId, recontactPrompt.id, undefined, undefined, undefined, schedule);
+      setContactTagIds((prev) => [...prev, recontactPrompt.id]);
+      onUpdated();
+      setRecontactPrompt(null);
+      toast.success(t('recontactScheduled'));
+    } catch {
+      toast.error(t('recontactScheduleFailed'));
+    } finally {
+      setSavingRecontact(false);
     }
   }
 
@@ -894,6 +919,18 @@ export function ContactDetailView({
         currency={defaultCurrency}
         saving={savingSale}
         onConfirm={confirmSalePrice}
+      />
+    )}
+    {recontactPrompt && (
+      <RecontactScheduleDialog
+        open
+        onOpenChange={(next) => {
+          if (!next) setRecontactPrompt(null);
+        }}
+        tagName={recontactPrompt.name}
+        contactName={contact?.name || contact?.phone || ''}
+        saving={savingRecontact}
+        onConfirm={confirmRecontact}
       />
     )}
     {shipmentPrompt && contactId && (

@@ -149,6 +149,11 @@ export interface Tag {
    *  that has gone quiet (past the account's `dropped_after_hours`)
    *  without a sale on file (migration 064). */
   is_dropped_tag?: boolean;
+  /** When true, adding this tag to a contact opens
+   *  RecontactScheduleDialog instead of tagging immediately — the agent
+   *  picks an exact send date/time and an approved template, stored as
+   *  a one-off row in contact_scheduled_messages (migration 077). */
+  is_recontact_tag?: boolean;
 }
 
 export interface ContactTag {

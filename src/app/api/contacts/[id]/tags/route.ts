@@ -20,6 +20,27 @@ function tagWriteErrorResponse(error: ContactTagWriteError): NextResponse {
   return NextResponse.json({ error: error.message }, { status: error.status });
 }
 
+interface RecontactScheduleInput {
+  templateName: string;
+  templateLanguage: string;
+  templateParams: string[];
+  sendAtIso: string;
+}
+
+function readRecontactSchedule(raw: unknown): RecontactScheduleInput | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const templateName = typeof r.templateName === 'string' ? r.templateName.trim() : '';
+  const templateLanguage = typeof r.templateLanguage === 'string' ? r.templateLanguage.trim() : '';
+  const sendAtIso = typeof r.sendAtIso === 'string' ? r.sendAtIso : '';
+  const sendAtMs = Date.parse(sendAtIso);
+  if (!templateName || !templateLanguage || !Number.isFinite(sendAtMs)) return null;
+  const templateParams = Array.isArray(r.templateParams)
+    ? r.templateParams.filter((v): v is string => typeof v === 'string')
+    : [];
+  return { templateName, templateLanguage, templateParams, sendAtIso };
+}
+
 async function readTagRequest(
   request: Request
 ): Promise<{
@@ -27,12 +48,14 @@ async function readTagRequest(
   price: number | null;
   fecha: string | null;
   region: 'lima' | 'provincia' | null;
+  recontact: RecontactScheduleInput | null;
 }> {
   const body = (await request.json().catch(() => null)) as {
     tag_id?: unknown;
     price?: unknown;
     fecha?: unknown;
     region?: unknown;
+    recontact?: unknown;
   } | null;
   const tagId =
     typeof body?.tag_id === 'string' && body.tag_id.trim()
@@ -45,7 +68,8 @@ async function readTagRequest(
   const fecha =
     typeof body?.fecha === 'string' && body.fecha.trim() ? body.fecha.trim() : null;
   const region = body?.region === 'lima' || body?.region === 'provincia' ? body.region : null;
-  return { tagId, price, fecha, region };
+  const recontact = readRecontactSchedule(body?.recontact);
+  return { tagId, price, fecha, region, recontact };
 }
 
 export async function POST(
@@ -55,7 +79,7 @@ export async function POST(
   try {
     const ctx = await requireRole('agent');
     const { id: contactId } = await params;
-    const { tagId, price, fecha, region } = await readTagRequest(request);
+    const { tagId, price, fecha, region, recontact } = await readTagRequest(request);
     if (!tagId) {
       return NextResponse.json({ error: 'tag_id required' }, { status: 400 });
     }
@@ -72,6 +96,7 @@ export async function POST(
     // contact's region to the live sheet — both only on a genuine new
     // add (never on a duplicate re-tag).
     let saleId: string | null = null;
+    let scheduledMessageId: string | null = null;
     if (result.added) {
       // Fetched together rather than gating the account lookup behind
       // knowing `is_sale_tag` first — the two queries don't depend on
@@ -81,7 +106,7 @@ export async function POST(
       const [{ data: tag }, { data: account }] = await Promise.all([
         ctx.supabase
           .from('tags')
-          .select('name, is_sale_tag, region_value')
+          .select('name, is_sale_tag, region_value, is_recontact_tag')
           .eq('id', tagId)
           .maybeSingle(),
         ctx.supabase.from('accounts').select('default_currency').eq('id', ctx.accountId).maybeSingle(),
@@ -113,6 +138,31 @@ export async function POST(
             console.error('[contacts/tags] region sheet push failed:', err);
           }
         });
+      }
+
+      // A "recontact tag" (migration 077) carries the exact date/time
+      // and template the agent picked in RecontactScheduleDialog — one
+      // row per tagging, drained by the same in-process scheduler that
+      // resolves automation Wait steps (src/lib/contacts/scheduled-messages.ts).
+      if (tag?.is_recontact_tag && recontact) {
+        const { data: scheduled, error: scheduleError } = await ctx.supabase
+          .from('contact_scheduled_messages')
+          .insert({
+            account_id: ctx.accountId,
+            contact_id: contactId,
+            user_id: ctx.userId,
+            template_name: recontact.templateName,
+            template_language: recontact.templateLanguage,
+            template_params: recontact.templateParams,
+            send_at: recontact.sendAtIso,
+          })
+          .select('id')
+          .single();
+        if (scheduleError) {
+          console.error('[contacts/tags] recontact schedule insert failed:', scheduleError.message);
+        } else {
+          scheduledMessageId = scheduled.id;
+        }
       }
 
       // Meta Conversions API — report the sale as a Purchase event so
@@ -293,7 +343,7 @@ export async function POST(
       }
     }
 
-    return NextResponse.json({ ok: true, ...result, saleId });
+    return NextResponse.json({ ok: true, ...result, saleId, scheduledMessageId });
   } catch (error) {
     if (error instanceof ContactTagWriteError) {
       return tagWriteErrorResponse(error);

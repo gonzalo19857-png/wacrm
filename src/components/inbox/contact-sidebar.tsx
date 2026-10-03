@@ -5,9 +5,10 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import type { Contact, Sale, ContactNote, Tag } from "@/types";
-import { addContactTag, deleteContactTag } from "@/lib/contacts/tag-api";
+import { addContactTag, deleteContactTag, type RecontactSchedule } from "@/lib/contacts/tag-api";
 import { avatarColorFor } from "@/lib/avatar-color";
 import { SalePriceDialog, type SaleRegion } from "@/components/contacts/sale-price-dialog";
+import { RecontactScheduleDialog } from "@/components/contacts/recontact-schedule-dialog";
 import { ShipmentPanel } from "@/components/contacts/shipment-panel";
 import { ShipmentQuickFormDialog } from "@/components/contacts/shipment-quick-form-dialog";
 import { toast } from "sonner";
@@ -69,6 +70,10 @@ export function ContactSidebar({ contact, onContactUpdated }: ContactSidebarProp
   // opens the price prompt instead of adding the tag immediately.
   const [salePrompt, setSalePrompt] = useState<{ id: string; name: string } | null>(null);
   const [savingSale, setSavingSale] = useState(false);
+  // Set when the tag just toggled on is a "recontact tag" (migration
+  // 077) — opens the date/template prompt instead of adding immediately.
+  const [recontactPrompt, setRecontactPrompt] = useState<{ id: string; name: string } | null>(null);
+  const [savingRecontact, setSavingRecontact] = useState(false);
   // Opened right after a "Venta" tag is confirmed with region ===
   // "provincia" — the focused product/recipient/agency prompt the
   // business asked for instead of relying on the collapsed shipment
@@ -158,6 +163,10 @@ export function ContactSidebar({ contact, onContactUpdated }: ContactSidebarProp
           setSalePrompt({ id: tag.id, name: tag.name });
           return;
         }
+        if (tag?.is_recontact_tag) {
+          setRecontactPrompt({ id: tag.id, name: tag.name });
+          return;
+        }
       }
 
       // Optimistic toggle — flip local state immediately instead of
@@ -213,6 +222,24 @@ export function ContactSidebar({ contact, onContactUpdated }: ContactSidebarProp
       }
     },
     [contact, salePrompt, fetchContactData, tSaleTag]
+  );
+
+  const handleConfirmRecontact = useCallback(
+    async (schedule: RecontactSchedule) => {
+      if (!contact || !recontactPrompt) return;
+      setSavingRecontact(true);
+      try {
+        await addContactTag(contact.id, recontactPrompt.id, undefined, undefined, undefined, schedule);
+        await fetchContactData();
+        setRecontactPrompt(null);
+        toast.success(tSidebar("recontactScheduled"));
+      } catch {
+        toast.error(tSidebar("recontactScheduleFailed"));
+      } finally {
+        setSavingRecontact(false);
+      }
+    },
+    [contact, recontactPrompt, fetchContactData, tSidebar]
   );
 
   const startEditSale = useCallback((sale: Sale) => {
@@ -661,6 +688,19 @@ export function ContactSidebar({ contact, onContactUpdated }: ContactSidebarProp
           currency={defaultCurrency}
           saving={savingSale}
           onConfirm={handleConfirmSalePrice}
+        />
+      )}
+
+      {recontactPrompt && (
+        <RecontactScheduleDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setRecontactPrompt(null);
+          }}
+          tagName={recontactPrompt.name}
+          contactName={displayName}
+          saving={savingRecontact}
+          onConfirm={handleConfirmRecontact}
         />
       )}
 

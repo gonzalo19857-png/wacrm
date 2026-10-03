@@ -6,18 +6,28 @@ interface ContactTagMutationResult {
   saleId?: string | null;
 }
 
+export interface RecontactSchedule {
+  templateName: string;
+  templateLanguage: string;
+  templateParams: string[];
+  /** ISO datetime the scheduler should send at (migration 077). */
+  sendAtIso: string;
+}
+
 async function mutateContactTag(
   contactId: string,
   tagId: string,
   method: 'POST' | 'DELETE',
   price?: number,
   fecha?: string,
-  region?: 'lima' | 'provincia' | null
+  region?: 'lima' | 'provincia' | null,
+  recontact?: RecontactSchedule
 ): Promise<ContactTagMutationResult> {
   const body: Record<string, unknown> = { tag_id: tagId };
   if (price !== undefined) body.price = price;
   if (fecha !== undefined) body.fecha = fecha;
   if (region) body.region = region;
+  if (recontact) body.recontact = recontact;
 
   const response = await fetch(`/api/contacts/${contactId}/tags`, {
     method,
@@ -46,9 +56,10 @@ export function addContactTag(
   tagId: string,
   price?: number,
   fecha?: string,
-  region?: 'lima' | 'provincia' | null
+  region?: 'lima' | 'provincia' | null,
+  recontact?: RecontactSchedule
 ) {
-  return mutateContactTag(contactId, tagId, 'POST', price, fecha, region);
+  return mutateContactTag(contactId, tagId, 'POST', price, fecha, region, recontact);
 }
 
 export function deleteContactTag(contactId: string, tagId: string) {
