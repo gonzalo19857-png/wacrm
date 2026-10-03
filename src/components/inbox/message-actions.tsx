@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { CornerUpLeft, Copy, SmilePlus } from "lucide-react";
+import { CornerUpLeft, Copy, Forward, SmilePlus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -20,6 +20,8 @@ interface MessageActionsProps {
   message: Message;
   onReply: () => void;
   onReact: (emoji: string) => void;
+  onForward: () => void;
+  onDelete: () => void;
   children: ReactNode;
 }
 
@@ -32,6 +34,8 @@ export function MessageActions({
   message,
   onReply,
   onReact,
+  onForward,
+  onDelete,
   children,
 }: MessageActionsProps) {
   const t = useTranslations("Inbox.actions");
@@ -73,6 +77,16 @@ export function MessageActions({
 
   const handleReply = () => {
     onReply();
+    setTouchOpen(false);
+  };
+
+  const handleForward = () => {
+    onForward();
+    setTouchOpen(false);
+  };
+
+  const handleDelete = () => {
+    onDelete();
     setTouchOpen(false);
   };
 
@@ -143,6 +157,22 @@ export function MessageActions({
           aria-label={t("copyText")}
         >
           <Copy className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={handleForward}
+          className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-muted hover:text-foreground"
+          aria-label={t("forward")}
+        >
+          <Forward className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={handleDelete}
+          className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-muted hover:text-foreground"
+          aria-label={t("delete")}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
         </button>
       </div>
       </div>

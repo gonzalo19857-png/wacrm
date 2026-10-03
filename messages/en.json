@@ -169,7 +169,14 @@
       "selectConversation": "Select a conversation",
       "selectConversationHint": "Choose a conversation from the left to start messaging",
       "today": "Today",
-      "yesterday": "Yesterday"
+      "yesterday": "Yesterday",
+      "waitForMessageToSend": "Wait for the message to finish sending",
+      "deleteFailed": "Couldn't delete the message",
+      "messageDeleted": "Message deleted for you",
+      "undo": "Undo",
+      "forwardUnavailable": "This message can't be forwarded",
+      "forwardFailed": "Couldn't forward the message: {reason}",
+      "forwarded": "Message forwarded"
     },
     "sessionTimer": {
       "expired": "Expired",
@@ -248,6 +255,7 @@
       "reply": "Reply",
       "copyText": "Copy text",
       "delete": "Delete",
+      "forward": "Forward",
       "react": "React",
       "reactWith": "React with {emoji}",
       "nothingToCopy": "Nothing to copy",
@@ -279,6 +287,12 @@
       "back": "Back",
       "cancel": "Cancel",
       "send": "Send template"
+    },
+    "forwardDialog": {
+      "title": "Forward message",
+      "searchPlaceholder": "Search contacts...",
+      "noConversations": "No conversations found",
+      "unknownContact": "Unknown"
     },
     "sidebar": {
       "contactInfo": "Contact info",

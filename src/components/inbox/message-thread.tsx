@@ -28,6 +28,7 @@ import {
   RefreshCw,
   PanelRightOpen,
   PanelRightClose,
+  Phone,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { useTranslations } from "next-intl";
@@ -43,7 +44,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageBubble } from "./message-bubble";
 import { MessageActions } from "./message-actions";
 import { MediaLightbox } from "./media-lightbox";
+import { ForwardMessageDialog } from "./forward-message-dialog";
 import { collectMediaGallery } from "@/lib/media/gallery";
+import { buildForwardPayload } from "@/lib/inbox/forward-message";
 import {
   MessageComposer,
   CHAT_MEDIA_BUCKET,
@@ -199,6 +202,12 @@ export function MessageThread({
     }, 700);
   }, [isRefreshing, onRefresh]);
   const [replyTo, setReplyTo] = useState<ReplyDraft | null>(null);
+  // Messages this agent chose to "delete for me" — hidden only from their
+  // own view (migration 074). Not shared with teammates or the customer;
+  // WhatsApp's Cloud API has no endpoint to recall an already-delivered
+  // message, so there is no "delete for everyone" here.
+  const [hiddenMessageIds, setHiddenMessageIds] = useState<Set<string>>(new Set());
+  const [forwardTarget, setForwardTarget] = useState<Message | null>(null);
   // Which attachment the media viewer is showing. Lives here rather than in
   // the bubble so the viewer can page through every image/video in the
   // thread (issue #373). Paired with the conversation it belongs to and read
@@ -428,6 +437,86 @@ export function MessageThread({
       supabase.removeChannel(channel);
     };
   }, [conversationId]);
+
+  // "Delete for me" fetch — which messages in this conversation the
+  // current agent has hidden from their own view. Scoped to this user
+  // only (RLS enforces that regardless), refetched alongside reactions.
+  useEffect(() => {
+    if (!conversationId || !user?.id) {
+      setHiddenMessageIds(new Set());
+      return;
+    }
+    const supabase = createClient();
+    let cancelled = false;
+
+    (async () => {
+      const { data, error } = await supabase
+        .from("message_hidden_for_user")
+        .select("message_id")
+        .eq("conversation_id", conversationId)
+        .eq("user_id", user.id);
+      if (cancelled) return;
+      if (error) {
+        console.error("Failed to fetch hidden messages:", error);
+        return;
+      }
+      setHiddenMessageIds(new Set((data ?? []).map((r) => r.message_id as string)));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId, user?.id, resyncToken]);
+
+  // Realtime for "delete for me" — lets a second open tab for the same
+  // agent pick up a hide/undo immediately. Filtered server-side by RLS
+  // (a user only ever receives their own rows) and client-side by
+  // conversation, same pattern as the reactions channel above.
+  useEffect(() => {
+    if (!conversationId || !user?.id) return;
+    const supabase = createClient();
+    const userId = user.id;
+
+    const channel = supabase
+      .channel(`hidden-messages:${conversationId}:${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "message_hidden_for_user",
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          const row = payload.new as { message_id: string; user_id: string };
+          if (row.user_id !== userId) return;
+          setHiddenMessageIds((prev) => new Set(prev).add(row.message_id));
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "message_hidden_for_user",
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          const old = payload.old as Partial<{ message_id: string; user_id: string }>;
+          if (!old?.message_id) return;
+          setHiddenMessageIds((prev) => {
+            const next = new Set(prev);
+            next.delete(old.message_id!);
+            return next;
+          });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [conversationId, user?.id]);
 
   // Clear any in-progress reply draft when the active conversation changes —
   // a quote pulled from conversation A shouldn't bleed into conversation B.
@@ -737,9 +826,17 @@ export function MessageThread({
     return map;
   }, [messages]);
 
+  // Messages visible in this agent's own view — excludes anything they
+  // "deleted for me". The full `messages` list (above) stays untouched so
+  // reply-quote lookups still resolve even for a message this agent hid.
+  const visibleMessages = useMemo(
+    () => messages.filter((m) => !hiddenMessageIds.has(m.id)),
+    [messages, hiddenMessageIds],
+  );
+
   // Images + videos in the thread, in order — the set the media viewer
   // pages through with ← / →.
-  const mediaGallery = useMemo(() => collectMediaGallery(messages), [messages]);
+  const mediaGallery = useMemo(() => collectMediaGallery(visibleMessages), [visibleMessages]);
 
   // Bucket reactions by their target message_id for O(1) per-bubble lookup.
   const reactionsByMessageId = useMemo(() => {
@@ -840,6 +937,104 @@ export function MessageThread({
     [conversation, user?.id],
   );
 
+  // "Delete for me" — hides a message from only this agent's view
+  // (migration 074). Optimistic: the bubble disappears immediately, with
+  // an "Undo" toast action that re-shows it by deleting the hide row.
+  const handleDeleteForMe = useCallback(
+    async (messageId: string) => {
+      if (!user?.id || !conversation) return;
+      if (messageId.startsWith("temp-")) {
+        toast.error(t("waitForMessageToSend"));
+        return;
+      }
+
+      const userId = user.id;
+      const convId = conversation.id;
+      setHiddenMessageIds((prev) => new Set(prev).add(messageId));
+
+      const supabase = createClient();
+      const { error } = await supabase.from("message_hidden_for_user").insert({
+        message_id: messageId,
+        conversation_id: convId,
+        user_id: userId,
+      });
+
+      if (error) {
+        console.error("Failed to delete message for me:", error);
+        toast.error(t("deleteFailed"));
+        setHiddenMessageIds((prev) => {
+          const next = new Set(prev);
+          next.delete(messageId);
+          return next;
+        });
+        return;
+      }
+
+      toast.success(t("messageDeleted"), {
+        action: {
+          label: t("undo"),
+          onClick: () => {
+            setHiddenMessageIds((prev) => {
+              const next = new Set(prev);
+              next.delete(messageId);
+              return next;
+            });
+            void supabase
+              .from("message_hidden_for_user")
+              .delete()
+              .eq("message_id", messageId)
+              .eq("user_id", userId)
+              .then(({ error: undoError }) => {
+                if (undoError) {
+                  console.error("Failed to undo delete-for-me:", undoError);
+                }
+              });
+          },
+        },
+      });
+    },
+    [conversation, user?.id, t],
+  );
+
+  const handleOpenForward = useCallback((msg: Message) => {
+    setForwardTarget(msg);
+  }, []);
+
+  const handleConfirmForward = useCallback(
+    async (targetConversationId: string) => {
+      if (!forwardTarget) return;
+      const payload = buildForwardPayload(forwardTarget);
+      if (!payload) {
+        toast.error(t("forwardUnavailable"));
+        return;
+      }
+
+      try {
+        const res = await fetch("/api/whatsapp/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            conversation_id: targetConversationId,
+            ...payload,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const reason = data?.error || `HTTP ${res.status}`;
+          console.error("Failed to forward message:", reason);
+          toast.error(t("forwardFailed", { reason }));
+          return;
+        }
+        toast.success(t("forwarded"));
+      } catch (err) {
+        console.error("Failed to forward message:", err);
+        const reason = err instanceof Error ? err.message : "network error";
+        toast.error(t("forwardFailed", { reason }));
+      }
+    },
+    [forwardTarget, t],
+  );
+
   const handleAssignChange = useCallback(
     async (agentId: string | null) => {
       if (!conversation) return;
@@ -881,7 +1076,7 @@ export function MessageThread({
   }
 
   const displayName = contact.name || contact.phone;
-  const messageGroups = groupMessagesByDate(messages);
+  const messageGroups = groupMessagesByDate(visibleMessages);
   const currentStatus = STATUS_OPTIONS.find(
     (s) => s.value === conversation.status
   );
@@ -942,6 +1137,20 @@ export function MessageThread({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Direct phone call — regular tel: link, separate from
+              WhatsApp messaging. Only rendered when the contact has a
+              phone number on file. */}
+          {contact.phone && (
+            <a
+              href={`tel:${contact.phone}`}
+              aria-label={t("call")}
+              title={t("call")}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <Phone className="h-3.5 w-3.5" />
+            </a>
+          )}
+
           {/* Contact-panel toggle — desktop only. The contact sidebar
               eats a chunk of horizontal width that crowds the thread on
               smaller laptops; this lets agents reclaim it when they just
@@ -1089,7 +1298,7 @@ export function MessageThread({
           <div className="flex items-center justify-center py-12">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           </div>
-        ) : messages.length === 0 ? (
+        ) : visibleMessages.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12">
             <p className="text-sm text-muted-foreground">{t("noMessagesYet")}</p>
             <p className="text-xs text-muted-foreground">
@@ -1141,6 +1350,8 @@ export function MessageThread({
                         onReact={(emoji) => {
                           if (emoji) void postReaction(msg.id, emoji);
                         }}
+                        onForward={() => handleOpenForward(msg)}
+                        onDelete={() => void handleDeleteForMe(msg.id)}
                       >
                         <MessageBubble
                           message={msg}
@@ -1193,6 +1404,16 @@ export function MessageThread({
         open={templateModalOpen}
         onOpenChange={setTemplateModalOpen}
         onSelect={handleSendTemplate}
+      />
+
+      <ForwardMessageDialog
+        open={forwardTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setForwardTarget(null);
+        }}
+        message={forwardTarget}
+        excludeConversationId={conversation.id}
+        onForward={handleConfirmForward}
       />
 
       {/* Full-size viewer for the thread's images/videos. Renders nothing
