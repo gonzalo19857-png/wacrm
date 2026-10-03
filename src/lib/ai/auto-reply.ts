@@ -2,8 +2,9 @@ import { supabaseAdmin } from './admin-client'
 import { loadAiConfig } from './config'
 import { buildConversationContext } from './context'
 import { retrieveKnowledgeForMessages } from './knowledge'
+import { isLedConversation } from './query'
 import { generateReply } from './generate'
-import { aiDebounceMs, buildSystemPrompt, limaTimeHint } from './defaults'
+import { aiDebounceMs, buildSystemPrompt, limaTimeHint, selectBusinessPrompt } from './defaults'
 import {
   buildHandoffSummary,
   quoteLastCustomerMessage,
@@ -219,7 +220,7 @@ export async function dispatchInboundToAiReply(
     const greetingHint = limaTimeHint()
 
     const systemPrompt = buildSystemPrompt({
-      userPrompt: config.systemPrompt,
+      userPrompt: selectBusinessPrompt(config, isLedConversation(messages)),
       mode: 'auto_reply',
       knowledge,
       shipmentContext,

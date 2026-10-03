@@ -1,0 +1,23 @@
+-- ============================================================
+-- 073_ai_configs_led_system_prompt.sql
+--
+-- GMVA Auto's WhatsApp bot now sells two product lines on the same
+-- number/account: cobertores (the existing `system_prompt`) and focos
+-- LED. Concatenating both business prompts into one `system_prompt`
+-- text and trusting the model not to mix them was tried and failed a
+-- live A/B regression test: the LED-specific "only Plin, don't ask
+-- payment method" rule bled into cobertor replies, which dropped
+-- Yape/transferencia/tarjeta and stopped asking the customer which
+-- method they wanted.
+--
+-- Fix: keep the two business prompts in separate columns and have the
+-- application code pick ONE per reply (see `src/lib/ai/query.ts`'s
+-- `isLedConversation` and `src/lib/ai/defaults.ts`'s
+-- `selectBusinessPrompt`), based on whether the conversation is about
+-- LED lighting — so the model only ever sees the rules for the line
+-- it's actually answering, never both at once.
+--
+-- Idempotent — safe to run multiple times.
+-- ============================================================
+
+ALTER TABLE ai_configs ADD COLUMN IF NOT EXISTS led_system_prompt text;

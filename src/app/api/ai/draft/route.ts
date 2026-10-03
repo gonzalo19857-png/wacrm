@@ -4,8 +4,9 @@ import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit
 import { loadAiConfig } from '@/lib/ai/config'
 import { buildConversationContext } from '@/lib/ai/context'
 import { retrieveKnowledgeForMessages } from '@/lib/ai/knowledge'
+import { isLedConversation } from '@/lib/ai/query'
 import { generateReply } from '@/lib/ai/generate'
-import { buildSystemPrompt } from '@/lib/ai/defaults'
+import { buildSystemPrompt, selectBusinessPrompt } from '@/lib/ai/defaults'
 import { logAiUsage } from '@/lib/ai/usage'
 import { supabaseAdmin } from '@/lib/ai/admin-client'
 import { AiError } from '@/lib/ai/types'
@@ -100,7 +101,7 @@ export async function POST(request: Request) {
     )
 
     const systemPrompt = buildSystemPrompt({
-      userPrompt: config.systemPrompt,
+      userPrompt: selectBusinessPrompt(config, isLedConversation(messages)),
       mode: 'draft',
       knowledge,
     })

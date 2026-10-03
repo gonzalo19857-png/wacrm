@@ -8,6 +8,7 @@ function config(overrides: Partial<AiConfig> = {}): AiConfig {
     model: 'gpt-test',
     apiKey: 'sk-test',
     systemPrompt: null,
+    ledSystemPrompt: null,
     isActive: true,
     autoReplyEnabled: false,
     autoReplyMaxPerConversation: 3,

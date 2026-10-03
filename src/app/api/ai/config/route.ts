@@ -169,6 +169,7 @@ export async function POST(request: Request) {
           model,
           apiKey: apiKeyPlain,
           systemPrompt,
+          ledSystemPrompt: null,
           isActive,
           autoReplyEnabled,
           autoReplyMaxPerConversation: maxPer,

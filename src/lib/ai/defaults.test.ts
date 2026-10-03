@@ -1,5 +1,45 @@
 import { describe, expect, it } from 'vitest'
-import { limaTimeHint } from './defaults'
+import { limaTimeHint, selectBusinessPrompt } from './defaults'
+
+describe('selectBusinessPrompt', () => {
+  it('uses the LED prompt for a conversation detected as LED', () => {
+    expect(
+      selectBusinessPrompt(
+        { systemPrompt: 'cobertor rules', ledSystemPrompt: 'led rules' },
+        true,
+      ),
+    ).toBe('led rules')
+  })
+
+  it('uses the main prompt for a non-LED conversation', () => {
+    expect(
+      selectBusinessPrompt(
+        { systemPrompt: 'cobertor rules', ledSystemPrompt: 'led rules' },
+        false,
+      ),
+    ).toBe('cobertor rules')
+  })
+
+  it('never sends both prompts at once', () => {
+    const result = selectBusinessPrompt(
+      { systemPrompt: 'cobertor rules', ledSystemPrompt: 'led rules' },
+      true,
+    )
+    expect(result).not.toContain('cobertor rules')
+  })
+
+  it('falls back to the main prompt when LED is detected but no LED prompt is configured yet', () => {
+    expect(
+      selectBusinessPrompt({ systemPrompt: 'cobertor rules', ledSystemPrompt: null }, true),
+    ).toBe('cobertor rules')
+  })
+
+  it('falls back to the main prompt when the LED prompt is blank', () => {
+    expect(
+      selectBusinessPrompt({ systemPrompt: 'cobertor rules', ledSystemPrompt: '   ' }, true),
+    ).toBe('cobertor rules')
+  })
+})
 
 describe('limaTimeHint', () => {
   it('uses the real Peru weekday to set the Provincia dispatch promise', () => {

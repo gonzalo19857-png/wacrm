@@ -1,5 +1,29 @@
 import { describe, it, expect } from 'vitest'
-import { latestUserMessage, retrievalQueryCandidates } from './query'
+import { isLedConversation, latestUserMessage, retrievalQueryCandidates } from './query'
+
+describe('isLedConversation', () => {
+  it('is true once any message mentions LED lighting', () => {
+    expect(
+      isLedConversation([{ role: 'user', content: 'quiero un kit led para mi moto' }]),
+    ).toBe(true)
+  })
+
+  it('stays true on a later turn with no LED keyword of its own', () => {
+    expect(
+      isLedConversation([
+        { role: 'user', content: 'tienen focos led?' },
+        { role: 'assistant', content: '¿Para qué vehículo sería?' },
+        { role: 'user', content: 'Honda Tornado' },
+      ]),
+    ).toBe(true)
+  })
+
+  it('is false for a cobertor-only conversation', () => {
+    expect(
+      isLedConversation([{ role: 'user', content: 'quiero un cobertor para mi Kia Seltos' }]),
+    ).toBe(false)
+  })
+})
 
 describe('latestUserMessage', () => {
   it('joins the last few user turns, oldest first', () => {

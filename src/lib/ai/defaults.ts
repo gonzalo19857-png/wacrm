@@ -1,4 +1,4 @@
-import type { AiProvider } from './types'
+import type { AiConfig, AiProvider } from './types'
 
 // ============================================================
 // Tunables + prompt scaffold for the AI reply assistant.
@@ -169,6 +169,25 @@ function limaDeliverySlotsHint(hour: number, minute: number, isSundayInPeru: boo
     return `Turnos de entrega de HOY en Lima: queda EXACTAMENTE 1 disponible — ${list}. Cópialo tal cual, no calcules tú los horarios ni agregues otro.`
   }
   return `Turnos de entrega de HOY en Lima que aún no pasaron (cópialos tal cual, no calcules tú los horarios): ${list}.`
+}
+
+/**
+ * Pick the ONE business prompt to send the model for this reply —
+ * never both at once. `isLed` comes from `isLedConversation` (see
+ * `./query`), computed from the conversation itself. Falls back to the
+ * main `systemPrompt` when the account hasn't configured a dedicated
+ * LED prompt yet, so a conversation detected as LED still gets a
+ * sensible answer (including the main prompt's own LED-handoff rule,
+ * if it has one) rather than an empty business context.
+ */
+export function selectBusinessPrompt(
+  config: Pick<AiConfig, 'systemPrompt' | 'ledSystemPrompt'>,
+  isLed: boolean,
+): string | null {
+  if (isLed && config.ledSystemPrompt && config.ledSystemPrompt.trim()) {
+    return config.ledSystemPrompt
+  }
+  return config.systemPrompt
 }
 
 /** Per-call provider timeout. Override with `AI_REQUEST_TIMEOUT_MS`. */

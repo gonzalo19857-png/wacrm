@@ -3,8 +3,9 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { loadAiConfig } from '@/lib/ai/config'
 import { retrieveKnowledgeForMessages } from '@/lib/ai/knowledge'
+import { isLedConversation } from '@/lib/ai/query'
 import { generateReply } from '@/lib/ai/generate'
-import { buildSystemPrompt, limaTimeHint } from '@/lib/ai/defaults'
+import { buildSystemPrompt, limaTimeHint, selectBusinessPrompt } from '@/lib/ai/defaults'
 import {
   enforceWhatsAppEmphasis,
   stripRepeatedRecommendation,
@@ -88,7 +89,7 @@ export async function POST(request: Request) {
     // folded into the business's own prompt) so it lands last — see
     // buildSystemPrompt's `timeHint` doc comment.
     const systemPrompt = buildSystemPrompt({
-      userPrompt: config.systemPrompt,
+      userPrompt: selectBusinessPrompt(config, isLedConversation(messages)),
       mode: 'auto_reply',
       knowledge,
       timeHint: limaTimeHint(),

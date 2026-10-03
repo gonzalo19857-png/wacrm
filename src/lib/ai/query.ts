@@ -66,8 +66,33 @@ function alreadyRecommendedTalla(messages: ChatMessage[]): boolean {
  * empty rather than reach back for the vehicle that's already been
  * handled.
  */
+const LED_SIGNAL_REGEX = /\bled\b|\bfoco(s)?\b|\bfaro(s)?\b|\bbarra(s)?\b|\bexplorador(es)?\b|\bproyector(es)?\b|\btechla\b|\biron\b/i
+
+/**
+ * True once ANY message in the conversation (customer or bot) already
+ * mentioned LED lighting, not just the latest turn: a follow-up like a
+ * bare "kia seltos" or "de cuántos w es?" carries no LED keyword of its
+ * own, but the conversation still needs to stay anchored to the LED
+ * product line once that's the established topic — otherwise it falls
+ * through to the vehicle-name query and gets swamped by the cobertor
+ * tallas docs (observed live: a fabricated price and generic marketing
+ * bullets instead of a real TECHLA/IRON product).
+ *
+ * Doubles as the product-line switch for which business prompt to send
+ * the model — see `selectBusinessPrompt` in `./defaults`. A single
+ * `system_prompt` that concatenated both cobertor and LED rules was
+ * tried and failed a live regression test (LED's "only Plin, don't ask
+ * payment method" rule bled into cobertor replies); keeping the two
+ * prompts separate and picking exactly one per reply, based on this
+ * same signal, is what actually keeps them from mixing.
+ */
+export function isLedConversation(messages: ChatMessage[]): boolean {
+  return messages.some((m) => LED_SIGNAL_REGEX.test(m.content))
+}
+
 export function retrievalQueryCandidates(messages: ChatMessage[]): string[] {
   const latest = latestUserMessage(messages, 1)
+  if (isLedConversation(messages)) return ['LED']
   if (alreadyRecommendedTalla(messages)) return [latest]
   const widened = latestUserMessage(messages, DEFAULT_WINDOW)
   return latest === widened ? [latest] : [latest, widened]

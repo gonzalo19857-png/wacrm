@@ -18,6 +18,12 @@ export interface AiConfig {
   model: string
   apiKey: string
   systemPrompt: string | null
+  /** Second business-line prompt (e.g. a different product the same
+   *  WhatsApp number sells) — used INSTEAD OF `systemPrompt`, never
+   *  alongside it, for a reply classified as that line. See
+   *  `selectBusinessPrompt` in `./defaults`. Null when the account only
+   *  sells one line. */
+  ledSystemPrompt: string | null
   isActive: boolean
   autoReplyEnabled: boolean
   autoReplyMaxPerConversation: number
