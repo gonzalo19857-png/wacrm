@@ -133,9 +133,17 @@ export function limaTimeHint(now: number = Date.now()): string {
  *  time — see `limaDeliverySlotsHint` below. */
 const LIMA_DELIVERY_SLOTS = [
   { emoji: '🕙', label: 'Turno mañana: 10:00 am – 12:00 pm', endMinutes: 12 * 60 },
-  { emoji: '🕑', label: 'Turno tarde: 2:00 pm – 4:00 pm', endMinutes: 16 * 60 },
-  { emoji: '🌆', label: 'Turno noche: 5:00 pm – 8:00 pm', endMinutes: 20 * 60 },
+  { emoji: '🕑', label: 'Turno tarde: 2:00 pm – 5:00 pm', endMinutes: 17 * 60 },
+  { emoji: '🌆', label: 'Turno noche: 6:00 pm – 8:00 pm', endMinutes: 20 * 60 },
 ]
+
+/** New Lima orders stop being accepted for same-day delivery at this
+ *  time, even though "Turno noche" itself (above) runs until 20:00 —
+ *  there isn't enough lead time to still arrange a drop-off once this
+ *  passes. An order placed at or after this time gets pushed to
+ *  tomorrow, with all three slots offered (not just a filtered
+ *  subset), per the business's own rule. */
+const LIMA_SAME_DAY_CUTOFF_MINUTES = 18 * 60
 
 /**
  * Which of today's same-day Lima delivery slots are still open, computed
@@ -160,9 +168,13 @@ function limaDeliverySlotsHint(hour: number, minute: number, isSundayInPeru: boo
     return `Hoy es domingo en Perú: no hay reparto en Lima los domingos. Si el cliente pide entrega en Lima, ofrece los turnos de MAÑANA LUNES (no de hoy): ${list}. Deja claro que es para mañana lunes, no para hoy.`
   }
   const nowMinutes = hour * 60 + minute
-  const remaining = LIMA_DELIVERY_SLOTS.filter((s) => nowMinutes < s.endMinutes)
+  const remaining =
+    nowMinutes >= LIMA_SAME_DAY_CUTOFF_MINUTES
+      ? []
+      : LIMA_DELIVERY_SLOTS.filter((s) => nowMinutes < s.endMinutes)
   if (remaining.length === 0) {
-    return 'Turnos de entrega de HOY en Lima: ya no queda ninguno disponible (los 3 ya pasaron) — no ofrezcas ningún turno de hoy.'
+    const list = LIMA_DELIVERY_SLOTS.map((s) => `${s.emoji} ${s.label}`).join(' / ')
+    return `Turnos de entrega de HOY en Lima: ya no queda ninguno disponible (el pedido llegó después de las 6:00 pm, hora límite para entrega el mismo día) — no ofrezcas ningún turno de hoy. Ofrece los 3 turnos de MAÑANA en su lugar: ${list}.`
   }
   const list = remaining.map((s) => `${s.emoji} ${s.label}`).join(' / ')
   if (remaining.length === 1) {

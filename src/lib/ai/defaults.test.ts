@@ -58,21 +58,33 @@ describe('limaTimeHint', () => {
     // 13:00 in Peru (UTC-5) — mañana (ends 12:00) has closed, tarde + noche remain.
     const oneOClockPeru = Date.UTC(2026, 8, 21, 18, 0)
     const twoLeft = limaTimeHint(oneOClockPeru)
-    expect(twoLeft).toContain('Turno tarde: 2:00 pm – 4:00 pm')
-    expect(twoLeft).toContain('Turno noche: 5:00 pm – 8:00 pm')
+    expect(twoLeft).toContain('Turno tarde: 2:00 pm – 5:00 pm')
+    expect(twoLeft).toContain('Turno noche: 6:00 pm – 8:00 pm')
     expect(twoLeft).not.toContain('Turno mañana')
     expect(twoLeft).not.toContain('queda EXACTAMENTE 1')
 
-    // 17:30 in Peru — tarde (ends 16:00) has also closed, only noche remains.
+    // 17:30 in Peru — tarde (ends 17:00) has also closed, only noche remains.
     const fiveThirtyPeru = Date.UTC(2026, 8, 21, 22, 30)
     const oneLeft = limaTimeHint(fiveThirtyPeru)
-    expect(oneLeft).toContain('queda EXACTAMENTE 1 disponible — 🌆 Turno noche: 5:00 pm – 8:00 pm')
+    expect(oneLeft).toContain('queda EXACTAMENTE 1 disponible — 🌆 Turno noche: 6:00 pm – 8:00 pm')
     expect(oneLeft).not.toContain('Turno tarde')
 
     // 21:00 in Peru — all three have closed.
     const ninePmPeru = Date.UTC(2026, 8, 22, 2, 0)
     const noneLeft = limaTimeHint(ninePmPeru)
     expect(noneLeft).toContain('ya no queda ninguno disponible')
+  })
+
+  it('stops accepting same-day Lima orders at 6:00 pm even though "Turno noche" itself runs until 8:00 pm', () => {
+    // 18:30 in Peru — past the 6:00 pm same-day cutoff, well before noche's own 20:00 end.
+    const sixThirtyPeru = Date.UTC(2026, 8, 21, 23, 30)
+    const hint = limaTimeHint(sixThirtyPeru)
+    expect(hint).toContain('ya no queda ninguno disponible')
+    expect(hint).toContain('6:00 pm')
+    expect(hint).toContain('Ofrece los 3 turnos de MAÑANA')
+    expect(hint).toContain('Turno mañana: 10:00 am – 12:00 pm')
+    expect(hint).toContain('Turno tarde: 2:00 pm – 5:00 pm')
+    expect(hint).toContain('Turno noche: 6:00 pm – 8:00 pm')
   })
 
   it('pushes Lima delivery slots to Monday when today is Sunday in Peru', () => {
@@ -82,7 +94,7 @@ describe('limaTimeHint', () => {
     expect(hint).toContain('Hoy es domingo en Perú: no hay reparto en Lima los domingos')
     expect(hint).toContain('MAÑANA LUNES')
     expect(hint).toContain('Turno mañana: 10:00 am – 12:00 pm')
-    expect(hint).toContain('Turno tarde: 2:00 pm – 4:00 pm')
-    expect(hint).toContain('Turno noche: 5:00 pm – 8:00 pm')
+    expect(hint).toContain('Turno tarde: 2:00 pm – 5:00 pm')
+    expect(hint).toContain('Turno noche: 6:00 pm – 8:00 pm')
   })
 })
