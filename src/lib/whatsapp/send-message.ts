@@ -27,6 +27,7 @@ import {
   sendMediaMessage,
   sendInteractiveButtons,
   sendInteractiveList,
+  sendLocationMessage,
   type MediaKind,
 } from '@/lib/whatsapp/meta-api';
 import {
@@ -55,6 +56,7 @@ export const VALID_MESSAGE_TYPES = [
   'text',
   'template',
   'interactive',
+  'location',
   ...MEDIA_KINDS,
 ] as const;
 
@@ -89,6 +91,11 @@ export interface SendMessageParams {
   /** Structured payload for `messageType === 'interactive'`. */
   interactivePayload?: InteractiveMessagePayload | null;
   replyToMessageId?: string | null;
+  /** Required for `messageType === 'location'`. */
+  latitude?: number | null;
+  longitude?: number | null;
+  locationName?: string | null;
+  locationAddress?: string | null;
 }
 
 export interface SendMessageResult {
@@ -119,9 +126,18 @@ export function validateSendMessageParams(params: {
   mediaUrl?: string | null;
   templateName?: string | null;
   interactivePayload?: InteractiveMessagePayload | null;
+  latitude?: number | null;
+  longitude?: number | null;
 }): void {
-  const { messageType, contentText, mediaUrl, templateName, interactivePayload } =
-    params;
+  const {
+    messageType,
+    contentText,
+    mediaUrl,
+    templateName,
+    interactivePayload,
+    latitude,
+    longitude,
+  } = params;
 
   if (!messageType) {
     throw new SendMessageError('bad_request', 'message_type is required', 400);
@@ -149,6 +165,14 @@ export function validateSendMessageParams(params: {
     throw new SendMessageError(
       'bad_request',
       'template_name is required for template messages',
+      400
+    );
+  }
+
+  if (messageType === 'location' && (latitude == null || longitude == null)) {
+    throw new SendMessageError(
+      'bad_request',
+      'latitude and longitude are required for location messages',
       400
     );
   }
@@ -202,6 +226,10 @@ export async function sendMessageToConversation(
     templateMessageParams,
     interactivePayload,
     replyToMessageId,
+    latitude,
+    longitude,
+    locationName,
+    locationAddress,
   } = params;
 
   if (!conversationId) {
@@ -218,6 +246,8 @@ export async function sendMessageToConversation(
     mediaUrl,
     templateName,
     interactivePayload,
+    latitude,
+    longitude,
   });
 
   const isMediaKind = (MEDIA_KINDS as readonly string[]).includes(messageType);
@@ -372,6 +402,19 @@ export async function sendMessageToConversation(
       });
       return result.messageId;
     }
+    if (messageType === 'location') {
+      const result = await sendLocationMessage({
+        phoneNumberId: config.phone_number_id,
+        accessToken,
+        to: phone,
+        latitude: latitude!,
+        longitude: longitude!,
+        name: locationName || undefined,
+        address: locationAddress || undefined,
+        contextMessageId,
+      });
+      return result.messageId;
+    }
     if (messageType === 'interactive') {
       const p = interactivePayload!;
       if (p.kind === 'buttons') {
@@ -478,7 +521,15 @@ export async function sendMessageToConversation(
             templateBodyParams(templateParams, templateMessageParams),
             contentText
           )
-        : (contentText ?? null);
+        // Same "name - address - lat,lng" shape the webhook persists for
+        // an inbound location (see its 'location' case) — keeps the
+        // Inbox's location bubble (which parses that trailing lat,lng)
+        // rendering a Maps link for an outbound/forwarded one too.
+        : messageType === 'location'
+          ? [locationName, locationAddress, `${latitude},${longitude}`]
+              .filter(Boolean)
+              .join(' - ')
+          : (contentText ?? null);
 
   const { data: messageRecord, error: msgError } = await db
     .from('messages')

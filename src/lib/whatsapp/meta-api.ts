@@ -338,6 +338,55 @@ export async function sendMediaMessage(
   return { messageId: data.messages[0].id }
 }
 
+export interface SendLocationMessageArgs {
+  phoneNumberId: string
+  accessToken: string
+  to: string
+  latitude: number
+  longitude: number
+  /** Optional pin label — shown above the address on WhatsApp. */
+  name?: string
+  address?: string
+  contextMessageId?: string
+}
+
+/**
+ * Send a native WhatsApp location message (a real, tappable map pin —
+ * not text). Used by the inbox's "forward" action so forwarding a
+ * location a customer shared lands the same way a real WhatsApp
+ * forward would, instead of a plain-text string of raw coordinates.
+ */
+export async function sendLocationMessage(
+  args: SendLocationMessageArgs
+): Promise<MetaSendResult> {
+  const { phoneNumberId, accessToken, to, latitude, longitude, name, address, contextMessageId } = args
+  const url = `${META_API_BASE}/${phoneNumberId}/messages`
+  const location: Record<string, unknown> = { latitude, longitude }
+  if (name) location.name = name
+  if (address) location.address = address
+  const body: Record<string, unknown> = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    ...recipientField(to),
+    type: 'location',
+    location,
+  }
+  if (contextMessageId) body.context = { message_id: contextMessageId }
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+  const data = await response.json()
+  return { messageId: data.messages[0].id }
+}
+
 import type { MessageTemplate } from '@/types'
 import {
   buildSendComponents,

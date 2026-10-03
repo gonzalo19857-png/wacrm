@@ -58,6 +58,10 @@ export async function POST(request: Request) {
       template_message_params,
       interactive_payload,
       reply_to_message_id,
+      latitude,
+      longitude,
+      location_name,
+      location_address,
     } = body
 
     if ((!conversationIdInput && !contact_id) || !message_type) {
@@ -80,6 +84,8 @@ export async function POST(request: Request) {
         mediaUrl: media_url,
         templateName: template_name,
         interactivePayload: interactive_payload,
+        latitude,
+        longitude,
       })
     } catch (err) {
       if (err instanceof SendMessageError) {
@@ -165,6 +171,10 @@ export async function POST(request: Request) {
         templateMessageParams: template_message_params,
         interactivePayload: interactive_payload,
         replyToMessageId: reply_to_message_id,
+        latitude,
+        longitude,
+        locationName: location_name,
+        locationAddress: location_address,
       })
 
       return NextResponse.json({
