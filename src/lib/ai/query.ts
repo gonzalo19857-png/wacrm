@@ -85,14 +85,33 @@ const LED_SIGNAL_REGEX = /\bled\b|\bfoco(s)?\b|\bfaro(s)?\b|\bbarra(s)?\b|\bexpl
  * payment method" rule bled into cobertor replies); keeping the two
  * prompts separate and picking exactly one per reply, based on this
  * same signal, is what actually keeps them from mixing.
+ *
+ * `adProductLine` is the precise signal from `resolveAdCampaignLine`
+ * (src/lib/meta/ad-campaign.ts): the Meta ad campaign that actually
+ * brought this contact in, resolved once at the first inbound message
+ * and cached on `contacts.ad_product_line`. When it says 'led', that
+ * wins outright — a customer who clicked a LED ad and just says
+ * "cuánto cuesta" carries no LED keyword of its own, so the campaign is
+ * the only way to get that turn right. It's deliberately only checked
+ * for a positive 'led' match, never used to force a 'false': a contact
+ * attributed to a cobertor campaign who later asks about LED anyway
+ * should still be caught by the keyword fallback below, not silently
+ * misrouted because of the ad they happened to click.
  */
-export function isLedConversation(messages: ChatMessage[]): boolean {
+export function isLedConversation(
+  messages: ChatMessage[],
+  adProductLine?: 'led' | 'cobertor' | null,
+): boolean {
+  if (adProductLine === 'led') return true
   return messages.some((m) => LED_SIGNAL_REGEX.test(m.content))
 }
 
-export function retrievalQueryCandidates(messages: ChatMessage[]): string[] {
+export function retrievalQueryCandidates(
+  messages: ChatMessage[],
+  adProductLine?: 'led' | 'cobertor' | null,
+): string[] {
   const latest = latestUserMessage(messages, 1)
-  if (isLedConversation(messages)) return ['LED']
+  if (isLedConversation(messages, adProductLine)) return ['LED']
   if (alreadyRecommendedTalla(messages)) return [latest]
   const widened = latestUserMessage(messages, DEFAULT_WINDOW)
   return latest === widened ? [latest] : [latest, widened]

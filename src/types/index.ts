@@ -118,6 +118,13 @@ export interface Contact {
    *  API for any WhatsApp `business_messaging` Purchase event — see
    *  `src/lib/meta/conversions-api.ts`. Null for organic contacts. */
   ctwa_clid?: string | null;
+  /** Meta campaign id the first inbound ad click resolved to, and the
+   *  business line ('led' | 'cobertor') that campaign's name was
+   *  classified as (migration 076) — see
+   *  `src/lib/meta/ad-campaign.ts#resolveAdCampaignLine`. Both null for
+   *  organic contacts or when the resolution couldn't be trusted. */
+  ad_campaign_id?: string | null;
+  ad_product_line?: 'led' | 'cobertor' | null;
 }
 
 export interface Tag {

@@ -12,6 +12,7 @@ import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
+import { resolveAdCampaignLine } from '@/lib/meta/ad-campaign'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import {
   handleTemplateWebhookChange,
@@ -776,6 +777,41 @@ async function processMessage(
       console.error('[webhook] failed to persist ctwa_clid:', ctwaError)
     } else {
       contactRecord.ctwa_clid = message.referral.ctwa_clid
+    }
+  }
+
+  // Same first-touch pattern as ctwa_clid above, but resolving WHICH
+  // business line (LED vs cobertor) this ad click came from — see
+  // src/lib/meta/ad-campaign.ts. Replaces guessing the line from
+  // keywords in the customer's own messages (unreliable: a customer
+  // who clicked a LED ad and just says "cuánto cuesta" carries no LED
+  // keyword at all) with the actual campaign the ad belongs to.
+  // `source_type === 'ad'` guards against spending a Graph API call on
+  // an organic post referral, which has no campaign to resolve.
+  if (
+    message.referral?.source_type === 'ad' &&
+    message.referral.source_id &&
+    !contactRecord.ad_campaign_id
+  ) {
+    const resolved = await resolveAdCampaignLine(
+      supabaseAdmin(),
+      accountId,
+      message.referral.source_id,
+    )
+    if (resolved) {
+      const { error: campaignError } = await supabaseAdmin()
+        .from('contacts')
+        .update({
+          ad_campaign_id: resolved.campaignId,
+          ad_product_line: resolved.productLine,
+        })
+        .eq('id', contactRecord.id)
+      if (campaignError) {
+        console.error('[webhook] failed to persist ad_campaign_id:', campaignError)
+      } else {
+        contactRecord.ad_campaign_id = resolved.campaignId
+        contactRecord.ad_product_line = resolved.productLine
+      }
     }
   }
 

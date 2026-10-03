@@ -174,6 +174,19 @@ export async function dispatchInboundToAiReply(
     const messages = await buildConversationContext(db, conversationId)
     if (messages.length === 0) return
 
+    // The precise LED-vs-cobertor signal (which ad campaign brought
+    // this contact in, resolved once by the webhook — see
+    // src/lib/meta/ad-campaign.ts) takes priority over guessing from
+    // keywords in the conversation text. Null for organic contacts or
+    // when resolution wasn't possible, in which case isLedConversation
+    // falls back to the keyword check exactly as before.
+    const { data: adLineContact } = await db
+      .from('contacts')
+      .select('ad_product_line')
+      .eq('id', contactId)
+      .maybeSingle()
+    const adProductLine = adLineContact?.ad_product_line ?? null
+
     // Account-wide throttle on the shared BYO key. The per-conversation
     // cap bounds one thread; this bounds a burst across many threads (a
     // marketing blast landing 200 replies at once) so we never run the
@@ -206,6 +219,7 @@ export async function dispatchInboundToAiReply(
       accountId,
       config,
       messages,
+      adProductLine,
     )
 
     // Delivery-flow grounding (migration 052): a summary of any
@@ -220,7 +234,7 @@ export async function dispatchInboundToAiReply(
     const greetingHint = limaTimeHint()
 
     const systemPrompt = buildSystemPrompt({
-      userPrompt: selectBusinessPrompt(config, isLedConversation(messages)),
+      userPrompt: selectBusinessPrompt(config, isLedConversation(messages, adProductLine)),
       mode: 'auto_reply',
       knowledge,
       shipmentContext,

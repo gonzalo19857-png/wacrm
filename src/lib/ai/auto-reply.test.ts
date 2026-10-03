@@ -25,6 +25,10 @@ const h = vi.hoisted(() => ({
     convOnRecheck: null as Record<string, unknown> | null,
     convSelectCount: 0,
     rateLimitOk: true as boolean,
+    // The contact's resolved ad campaign line (migration 076) — null
+    // means "organic / unresolved", same as a real contact with no
+    // referral.
+    adProductLine: null as 'led' | 'cobertor' | null,
   },
 }))
 
@@ -74,6 +78,20 @@ vi.mock('./admin-client', () => ({
             Promise.resolve({ data: h.state.autoResponders, error: null }),
         }
         return chain
+      }
+      if (table === 'contacts') {
+        // .select('ad_product_line').eq().maybeSingle()
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: () =>
+                Promise.resolve({
+                  data: { ad_product_line: h.state.adProductLine },
+                  error: null,
+                }),
+            }),
+          }),
+        }
       }
       // conversations
       return {
@@ -142,6 +160,7 @@ beforeEach(() => {
   h.state.convOnRecheck = null
   h.state.convSelectCount = 0
   h.state.rateLimitOk = true
+  h.state.adProductLine = null
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.retrieveKnowledge.mockResolvedValue({ excerpts: [], imageUrl: null })
@@ -502,6 +521,65 @@ describe('dispatchInboundToAiReply — needs-human Telegram alerts', () => {
       expect.anything(),
       expect.objectContaining({ reason: 'handoff', handoffReason: 'lima' }),
     )
+  })
+})
+
+describe('dispatchInboundToAiReply — ad-campaign product-line routing', () => {
+  it('routes to the LED business prompt from the resolved ad campaign alone, with no LED keyword in the conversation', async () => {
+    // Regression target: a customer who clicked a LED ad and just asks
+    // "cuánto cuesta" carries no keyword the old detector could catch.
+    h.state.adProductLine = 'led'
+    h.buildConversationContext.mockResolvedValue([
+      { role: 'user', content: 'cuánto cuesta?' },
+    ])
+    h.loadAiConfig.mockResolvedValue(
+      aiConfig({ systemPrompt: 'cobertor rules', ledSystemPrompt: 'led rules' }),
+    )
+    await dispatchInboundToAiReply(ARGS)
+    const systemPrompt = h.generateReply.mock.calls[0][0].systemPrompt as string
+    expect(systemPrompt).toContain('led rules')
+    expect(systemPrompt).not.toContain('cobertor rules')
+  })
+
+  it('passes the resolved product line through to knowledge retrieval', async () => {
+    h.state.adProductLine = 'led'
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.retrieveKnowledge).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      'led',
+    )
+  })
+
+  it('still falls back to keyword detection when the contact has no resolved ad campaign', async () => {
+    h.state.adProductLine = null
+    h.buildConversationContext.mockResolvedValue([
+      { role: 'user', content: 'quiero un cobertor para mi Kia Seltos' },
+    ])
+    h.loadAiConfig.mockResolvedValue(
+      aiConfig({ systemPrompt: 'cobertor rules', ledSystemPrompt: 'led rules' }),
+    )
+    await dispatchInboundToAiReply(ARGS)
+    const systemPrompt = h.generateReply.mock.calls[0][0].systemPrompt as string
+    expect(systemPrompt).toContain('cobertor rules')
+    expect(systemPrompt).not.toContain('led rules')
+  })
+
+  it('does not force cobertor when the campaign resolves to cobertor but the customer asks about LED anyway', async () => {
+    // The campaign signal only ever asserts a positive 'led' match —
+    // it must never suppress the keyword fallback for the opposite case.
+    h.state.adProductLine = 'cobertor'
+    h.buildConversationContext.mockResolvedValue([
+      { role: 'user', content: 'tienen focos led?' },
+    ])
+    h.loadAiConfig.mockResolvedValue(
+      aiConfig({ systemPrompt: 'cobertor rules', ledSystemPrompt: 'led rules' }),
+    )
+    await dispatchInboundToAiReply(ARGS)
+    const systemPrompt = h.generateReply.mock.calls[0][0].systemPrompt as string
+    expect(systemPrompt).toContain('led rules')
   })
 })
 

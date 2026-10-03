@@ -47,7 +47,7 @@ export async function POST(request: Request) {
     // row means "not yours / not found" either way.
     const { data: conversation, error: convErr } = await supabase
       .from('conversations')
-      .select('id')
+      .select('id, contact_id')
       .eq('id', conversationId)
       .maybeSingle()
     if (convErr) {
@@ -93,15 +93,29 @@ export async function POST(request: Request) {
     // returns [] when there's no KB or retrieval fails). The draft is
     // human-reviewed before sending, so any grounding image is ignored
     // here — only the live auto-reply bot attaches it automatically.
+    // Same precise LED-vs-cobertor signal the auto-reply bot uses (see
+    // src/lib/ai/auto-reply.ts) — the ad campaign resolved by the
+    // webhook on first touch, cached on the contact. Null for organic
+    // contacts or an unresolved referral, in which case the keyword
+    // fallback inside isLedConversation/retrievalQueryCandidates
+    // applies exactly as before.
+    const { data: adLineContact } = await supabase
+      .from('contacts')
+      .select('ad_product_line')
+      .eq('id', conversation.contact_id)
+      .maybeSingle()
+    const adProductLine = adLineContact?.ad_product_line ?? null
+
     const { excerpts: knowledge } = await retrieveKnowledgeForMessages(
       supabase,
       accountId,
       config,
       messages,
+      adProductLine,
     )
 
     const systemPrompt = buildSystemPrompt({
-      userPrompt: selectBusinessPrompt(config, isLedConversation(messages)),
+      userPrompt: selectBusinessPrompt(config, isLedConversation(messages, adProductLine)),
       mode: 'draft',
       knowledge,
     })

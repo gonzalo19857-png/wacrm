@@ -198,9 +198,10 @@ export async function retrieveKnowledgeForMessages(
   accountId: string,
   config: Pick<AiConfig, 'embeddingsApiKey'>,
   messages: ChatMessage[],
+  adProductLine?: 'led' | 'cobertor' | null,
   k = 5,
 ): Promise<KnowledgeResult> {
-  for (const query of retrievalQueryCandidates(messages)) {
+  for (const query of retrievalQueryCandidates(messages, adProductLine)) {
     const result = await retrieveKnowledge(db, accountId, config, query, k)
     if (result.excerpts.length > 0) return result
   }

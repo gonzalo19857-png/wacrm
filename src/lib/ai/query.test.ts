@@ -23,6 +23,19 @@ describe('isLedConversation', () => {
       isLedConversation([{ role: 'user', content: 'quiero un cobertor para mi Kia Seltos' }]),
     ).toBe(false)
   })
+
+  it('is true when the resolved ad campaign is LED, even with no LED keyword', () => {
+    expect(isLedConversation([{ role: 'user', content: 'cuánto cuesta?' }], 'led')).toBe(true)
+  })
+
+  it('still falls back to the keyword check when the resolved ad campaign is cobertor', () => {
+    expect(
+      isLedConversation([{ role: 'user', content: 'tienen focos led?' }], 'cobertor'),
+    ).toBe(true)
+    expect(
+      isLedConversation([{ role: 'user', content: 'cuánto cuesta?' }], 'cobertor'),
+    ).toBe(false)
+  })
 })
 
 describe('latestUserMessage', () => {
