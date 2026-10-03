@@ -43,9 +43,21 @@ export async function PATCH(
       if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 })
       update.interactive_payload = body.interactive_payload
       update.content_text = null
+      update.image_url = null
+      update.video_url = null
     } else {
       const text = typeof body.content_text === 'string' ? body.content_text : ''
-      if (!text.trim()) {
+      const image_url =
+        'image_url' in body && typeof body.image_url === 'string' && body.image_url.trim()
+          ? body.image_url.trim()
+          : null
+      const video_url =
+        'video_url' in body && typeof body.video_url === 'string' && body.video_url.trim()
+          ? body.video_url.trim()
+          : null
+      // The caption is optional when a photo/video is attached — only a
+      // text-only quick reply must have a body.
+      if (!text.trim() && !image_url && !video_url) {
         return NextResponse.json(
           { error: 'content_text is required for text quick replies' },
           { status: 400 },
@@ -53,10 +65,20 @@ export async function PATCH(
       }
       update.content_text = text
       update.interactive_payload = null
+      if ('image_url' in body) update.image_url = image_url
+      if ('video_url' in body) update.video_url = video_url
     }
   } else {
     // No kind change — allow partial edits of whichever field the row uses.
     if ('content_text' in body) update.content_text = body.content_text ?? null
+    if ('image_url' in body) {
+      update.image_url =
+        typeof body.image_url === 'string' && body.image_url.trim() ? body.image_url.trim() : null
+    }
+    if ('video_url' in body) {
+      update.video_url =
+        typeof body.video_url === 'string' && body.video_url.trim() ? body.video_url.trim() : null
+    }
     if ('interactive_payload' in body) {
       if (body.interactive_payload != null) {
         const result = validateInteractivePayload(body.interactive_payload)

@@ -216,7 +216,9 @@
       "send": "Send",
       "quickReplyNamePrompt": "Name this quick reply:",
       "quickReplySaved": "Saved as a quick reply.",
-      "quickReplySaveError": "Couldn't save the quick reply."
+      "quickReplySaveError": "Couldn't save the quick reply.",
+      "saveComposerAsQuickReplyTitle": "Save as quick reply",
+      "quickReplyNothingToSave": "Type a message or attach a photo/video first."
     },
     "bubble": {
       "photo": "Photo",

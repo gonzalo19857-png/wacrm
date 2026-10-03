@@ -42,6 +42,11 @@ export async function POST(request: Request) {
 
   let content_text: string | null = null
   let interactive_payload: unknown = null
+  // Only a text quick reply can carry media — an interactive one already
+  // has its own header/media shape via interactive_payload. image_url and
+  // video_url are mutually exclusive (at most one attachment per reply).
+  let image_url: string | null = null
+  let video_url: string | null = null
 
   if (kind === 'interactive') {
     const result = validateInteractivePayload(body.interactive_payload)
@@ -50,8 +55,13 @@ export async function POST(request: Request) {
     }
     interactive_payload = body.interactive_payload
   } else {
+    image_url = typeof body.image_url === 'string' && body.image_url.trim() ? body.image_url.trim() : null
+    video_url = typeof body.video_url === 'string' && body.video_url.trim() ? body.video_url.trim() : null
     const text = typeof body.content_text === 'string' ? body.content_text : ''
-    if (!text.trim()) {
+    // The caption is optional when a photo/video is attached (same as a
+    // plain WhatsApp media message) — only a text-only quick reply must
+    // have a body, since it'd otherwise insert nothing at all.
+    if (!text.trim() && !image_url && !video_url) {
       return NextResponse.json(
         { error: 'content_text is required for text quick replies' },
         { status: 400 },
@@ -69,6 +79,8 @@ export async function POST(request: Request) {
       kind,
       content_text,
       interactive_payload,
+      image_url,
+      video_url,
     })
     .select()
     .single()

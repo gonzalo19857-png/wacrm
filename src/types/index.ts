@@ -713,8 +713,13 @@ export interface QuickReply {
   content_text?: string | null;
   /** Optional image (migration 068) — only meaningful for `kind === 'text'`.
    *  When set, picking this quick reply stages it as a media draft
-   *  (image + `content_text` as caption) instead of filling the textarea. */
+   *  (image + `content_text` as caption) instead of filling the textarea.
+   *  Mutually exclusive with `video_url` — a quick reply carries at most
+   *  one attachment. */
   image_url?: string | null;
+  /** Optional video (migration 075) — same behavior as `image_url`, for
+   *  a video attachment instead of a photo. Mutually exclusive with it. */
+  video_url?: string | null;
   /** Set when `kind === 'interactive'`. */
   interactive_payload?: InteractiveMessagePayload | null;
   created_at: string;

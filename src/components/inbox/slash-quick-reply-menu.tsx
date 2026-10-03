@@ -48,7 +48,19 @@ export function SlashQuickReplyMenu({
                 i === activeIndex ? "bg-muted" : "hover:bg-muted/60",
               )}
             >
-              {qr.kind === "interactive" ? (
+              {qr.kind === "text" && qr.image_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={qr.image_url}
+                  alt=""
+                  className="mt-0.5 size-8 shrink-0 rounded-md border border-border object-cover"
+                />
+              ) : qr.kind === "text" && qr.video_url ? (
+                <video
+                  src={qr.video_url}
+                  className="mt-0.5 size-8 shrink-0 rounded-md border border-border object-cover"
+                />
+              ) : qr.kind === "interactive" ? (
                 <Zap className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
               ) : (
                 <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />

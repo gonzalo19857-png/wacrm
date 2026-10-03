@@ -133,6 +133,56 @@ export async function uploadAccountMedia(
 }
 
 /**
+ * Upload a file/blob to a Storage bucket that uses the bare account-id
+ * path convention from migrations 053 (`product-images`) and 054
+ * (`product-media`): `<bucket>/<account_id>/<file>` — no "account-"
+ * prefix, unlike `buildMediaPath`'s convention for chat-media/flow-media,
+ * since those buckets' RLS policies match the raw uuid segment directly.
+ * Shared by the quick-replies manager and the inbox composer's "save as
+ * quick reply" shortcut so the path convention and account lookup live
+ * in exactly one place.
+ */
+export async function uploadLibraryMedia(
+  bucket: "product-images" | "product-media",
+  file: File | Blob,
+  filename: string,
+): Promise<UploadAccountMediaResult> {
+  const supabase = createClient();
+
+  const {
+    data: { user },
+    error: userErr,
+  } = await supabase.auth.getUser();
+  if (userErr || !user) {
+    throw new Error("Not signed in.");
+  }
+
+  const { data: profile, error: profileErr } = await supabase
+    .from("profiles")
+    .select("account_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (profileErr || !profile?.account_id) {
+    throw new Error("Could not resolve your account.");
+  }
+
+  const ext = filename.split(".").pop()?.toLowerCase() || "jpg";
+  const path = `${profile.account_id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const { error: upErr } = await supabase.storage.from(bucket).upload(path, file, {
+    cacheControl: "3600",
+    upsert: false,
+    contentType: file.type || undefined,
+  });
+  if (upErr) throw new Error(upErr.message);
+
+  const {
+    data: { publicUrl },
+  } = supabase.storage.from(bucket).getPublicUrl(path);
+
+  return { publicUrl, path };
+}
+
+/**
  * Delete a previously-uploaded object. Used to GC media that was staged
  * (uploaded) but never sent — a cancelled draft or a failed Meta send —
  * so abandoned attachments don't accumulate in the public bucket. The

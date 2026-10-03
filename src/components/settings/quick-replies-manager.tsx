@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Loader2, MessageSquare, Pencil, Plus, Trash2, Zap } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Loader2, MessageSquare, Pencil, Plus, Trash2, Zap, ImagePlus, Video, X } from "lucide-react";
 import { toast } from "sonner";
 
+import { uploadLibraryMedia } from "@/lib/storage/upload-media";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -25,12 +26,25 @@ import {
 } from "@/lib/whatsapp/interactive";
 import type { QuickReply, QuickReplyKind } from "@/types";
 
+type MediaKind = "image" | "video";
+
+// Mirrors the chat-media composer's picker accept lists (migration 023) —
+// same formats the account is already allowed to send.
+const MEDIA_ACCEPT: Record<MediaKind, string> = {
+  image: "image/png,image/jpeg,image/webp,image/gif",
+  video: "video/mp4,video/3gpp,video/quicktime",
+};
+
 interface DraftState {
   id?: string;
   title: string;
   kind: QuickReplyKind;
   content_text: string;
   interactive_payload: InteractiveMessagePayload;
+  /** Already-saved image URL, or null if none/removed. Mutually exclusive with `video_url`. */
+  image_url: string | null;
+  /** Already-saved video URL, or null if none/removed (migration 075). */
+  video_url: string | null;
 }
 
 function emptyDraft(): DraftState {
@@ -39,6 +53,8 @@ function emptyDraft(): DraftState {
     kind: "text",
     content_text: "",
     interactive_payload: blankButtonsPayload(),
+    image_url: null,
+    video_url: null,
   };
 }
 
@@ -47,6 +63,13 @@ export function QuickRepliesManager() {
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState<DraftState | null>(null);
   const [saving, setSaving] = useState(false);
+  // A picked-but-not-yet-uploaded photo/video, staged the same way
+  // ProductManager stages one — uploaded to Storage only on Save, not
+  // on pick, so cancelling the dialog never orphans an object.
+  const [pendingMedia, setPendingMedia] = useState<{ file: File; kind: MediaKind } | null>(null);
+  const [mediaPreview, setMediaPreview] = useState<string | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -63,8 +86,12 @@ export function QuickRepliesManager() {
     void load();
   }, [load]);
 
-  const openCreate = () => setDraft(emptyDraft());
-  const openEdit = (qr: QuickReply) =>
+  const openCreate = () => {
+    setDraft(emptyDraft());
+    setPendingMedia(null);
+    setMediaPreview(null);
+  };
+  const openEdit = (qr: QuickReply) => {
     setDraft({
       id: qr.id,
       title: qr.title,
@@ -72,7 +99,24 @@ export function QuickRepliesManager() {
       content_text: qr.content_text ?? "",
       interactive_payload:
         qr.interactive_payload ?? blankButtonsPayload(),
+      image_url: qr.image_url ?? null,
+      video_url: qr.video_url ?? null,
     });
+    setPendingMedia(null);
+    setMediaPreview(null);
+  };
+
+  const handleMediaPick = (kind: MediaKind, file: File | undefined) => {
+    if (!file) return;
+    setPendingMedia({ file, kind });
+    setMediaPreview(URL.createObjectURL(file));
+  };
+
+  const removeMedia = () => {
+    setPendingMedia(null);
+    setMediaPreview(null);
+    setDraft((d) => (d ? { ...d, image_url: null, video_url: null } : d));
+  };
 
   const save = useCallback(async () => {
     if (!draft) return;
@@ -80,13 +124,39 @@ export function QuickRepliesManager() {
       toast.error("Give the quick reply a name.");
       return;
     }
-    const payload =
-      draft.kind === "interactive"
-        ? { title: draft.title, kind: "interactive", interactive_payload: draft.interactive_payload }
-        : { title: draft.title, kind: "text", content_text: draft.content_text };
 
     setSaving(true);
     try {
+      // Only a text quick reply can carry media — mirrors ProductManager's
+      // own upload-then-save pattern: the file goes to Storage first
+      // (product-images for a photo, product-media for a video —
+      // migrations 068/075), then its public URL rides along in the same
+      // JSON body the existing quick-reply API routes already accept.
+      let imageUrl = draft.kind === "text" ? draft.image_url : null;
+      let videoUrl = draft.kind === "text" ? draft.video_url : null;
+      if (draft.kind === "text" && pendingMedia) {
+        const bucket = pendingMedia.kind === "video" ? "product-media" : "product-images";
+        const { publicUrl } = await uploadLibraryMedia(bucket, pendingMedia.file, pendingMedia.file.name);
+        if (pendingMedia.kind === "video") {
+          videoUrl = publicUrl;
+          imageUrl = null;
+        } else {
+          imageUrl = publicUrl;
+          videoUrl = null;
+        }
+      }
+
+      const payload =
+        draft.kind === "interactive"
+          ? { title: draft.title, kind: "interactive", interactive_payload: draft.interactive_payload }
+          : {
+              title: draft.title,
+              kind: "text",
+              content_text: draft.content_text,
+              image_url: imageUrl,
+              video_url: videoUrl,
+            };
+
       const res = await fetch(
         draft.id ? `/api/quick-replies/${draft.id}` : "/api/quick-replies",
         {
@@ -102,13 +172,16 @@ export function QuickRepliesManager() {
       }
       toast.success(draft.id ? "Quick reply updated." : "Quick reply created.");
       setDraft(null);
+      setPendingMedia(null);
+      setMediaPreview(null);
       await load();
-    } catch {
+    } catch (err) {
+      console.error("Failed to save quick reply:", err);
       toast.error("Couldn't save the quick reply.");
     } finally {
       setSaving(false);
     }
-  }, [draft, load]);
+  }, [draft, load, pendingMedia]);
 
   const remove = useCallback(
     async (id: string) => {
@@ -151,7 +224,19 @@ export function QuickRepliesManager() {
               key={qr.id}
               className="flex items-start gap-3 rounded-lg border border-border bg-card p-3"
             >
-              {qr.kind === "interactive" ? (
+              {qr.kind === "text" && qr.image_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={qr.image_url}
+                  alt=""
+                  className="mt-0.5 size-8 shrink-0 rounded-md border border-border object-cover"
+                />
+              ) : qr.kind === "text" && qr.video_url ? (
+                <video
+                  src={qr.video_url}
+                  className="mt-0.5 size-8 shrink-0 rounded-md border border-border object-cover"
+                />
+              ) : qr.kind === "interactive" ? (
                 <Zap className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
               ) : (
                 <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
@@ -211,12 +296,86 @@ export function QuickRepliesManager() {
                 />
               </div>
               {draft.kind === "text" ? (
-                <Textarea
-                  value={draft.content_text}
-                  onChange={(e) => setDraft({ ...draft, content_text: e.target.value })}
-                  placeholder="The message text to insert"
-                  className="min-h-28 bg-muted text-foreground"
-                />
+                <>
+                  <Textarea
+                    value={draft.content_text}
+                    onChange={(e) => setDraft({ ...draft, content_text: e.target.value })}
+                    placeholder="The message text to insert"
+                    className="min-h-28 bg-muted text-foreground"
+                  />
+                  <div>
+                    <label className="mb-1 block text-xs text-muted-foreground">
+                      Photo or video (optional)
+                    </label>
+                    <input
+                      ref={imageInputRef}
+                      type="file"
+                      accept={MEDIA_ACCEPT.image}
+                      className="hidden"
+                      onChange={(e) => {
+                        handleMediaPick("image", e.target.files?.[0]);
+                        e.target.value = "";
+                      }}
+                    />
+                    <input
+                      ref={videoInputRef}
+                      type="file"
+                      accept={MEDIA_ACCEPT.video}
+                      className="hidden"
+                      onChange={(e) => {
+                        handleMediaPick("video", e.target.files?.[0]);
+                        e.target.value = "";
+                      }}
+                    />
+                    {mediaPreview || draft.image_url || draft.video_url ? (
+                      <div className="flex items-center gap-2">
+                        {(pendingMedia?.kind ?? (draft.video_url ? "video" : "image")) === "video" ? (
+                          <video
+                            src={mediaPreview ?? draft.video_url ?? undefined}
+                            controls
+                            className="size-16 rounded-md border border-border object-cover"
+                          />
+                        ) : (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={mediaPreview ?? draft.image_url ?? undefined}
+                            alt=""
+                            className="size-16 rounded-md border border-border object-cover"
+                          />
+                        )}
+                        <Button type="button" variant="outline" size="sm" onClick={removeMedia}>
+                          <X className="mr-1 h-3.5 w-3.5" />
+                          Remove
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => imageInputRef.current?.click()}
+                        >
+                          <ImagePlus className="mr-1 h-3.5 w-3.5" />
+                          Add image
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => videoInputRef.current?.click()}
+                        >
+                          <Video className="mr-1 h-3.5 w-3.5" />
+                          Add video
+                        </Button>
+                      </div>
+                    )}
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Picking this quick reply from the inbox stages the photo/video (with this
+                      text as the caption) instead of filling the message box.
+                    </p>
+                  </div>
+                </>
               ) : (
                 <InteractiveBuilder
                   value={draft.interactive_payload}

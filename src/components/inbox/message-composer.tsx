@@ -23,6 +23,7 @@ import {
   Plus,
   MessageSquareDashed,
   Zap,
+  Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
@@ -44,6 +45,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
   uploadAccountMedia,
+  uploadLibraryMedia,
   deleteAccountMedia,
   MEDIA_MAX_BYTES_BY_KIND,
 } from "@/lib/storage/upload-media";
@@ -343,16 +345,24 @@ export function MessageComposer({
         openInteractiveBuilderRef.current(qr.interactive_payload);
         return;
       }
-      if (qr.image_url) {
+      if (qr.image_url || qr.video_url) {
         // Stage it exactly like a freshly-uploaded attachment (same
         // preview/caption/send UI) — `path: ""` is deliberate: it's a
-        // reusable library asset in the `product-images` bucket, not an
-        // ephemeral chat-media upload, so discard/unmount/send-failure
-        // must never try to GC it (removeStaged/deleteAccountMedia both
-        // no-op on an empty path). Picking one replaces any staged batch —
-        // it's a deliberate "send this instead" action, not an addition.
+        // reusable library asset in the `product-images`/`product-media`
+        // bucket, not an ephemeral chat-media upload, so discard/unmount/
+        // send-failure must never try to GC it (removeStaged/
+        // deleteAccountMedia both no-op on an empty path). Picking one
+        // replaces any staged batch — it's a deliberate "send this
+        // instead" action, not an addition.
         draftsRef.current.forEach((d) => removeStaged(d.path));
-        setDrafts([{ kind: "image", mediaUrl: qr.image_url, path: "", filename: qr.title }]);
+        setDrafts([
+          {
+            kind: qr.video_url ? "video" : "image",
+            mediaUrl: (qr.video_url ?? qr.image_url) as string,
+            path: "",
+            filename: qr.title,
+          },
+        ]);
         setDraftCaption(qr.content_text ?? "");
         setText("");
         return;
@@ -551,6 +561,60 @@ export function MessageComposer({
     }
   }, [interactivePayload, t]);
 
+  // Persist the current composer state as a reusable text/media quick
+  // reply — the "pencil" shortcut, mirroring WhatsApp Business's own
+  // save-this-as-a-quick-reply affordance right inside the chat instead
+  // of only from the Settings manager. Saves whichever single staged
+  // attachment is on screen (its caption becomes content_text), or the
+  // plain typed text when nothing is staged.
+  const saveComposerAsQuickReply = useCallback(async () => {
+    const media =
+      drafts.length === 1 && (drafts[0].kind === "image" || drafts[0].kind === "video")
+        ? drafts[0]
+        : null;
+    const bodyText = media ? draftCaption : text;
+    if (!media && !bodyText.trim()) {
+      toast.error(t("quickReplyNothingToSave"));
+      return;
+    }
+    const title = window.prompt(t("quickReplyNamePrompt"))?.trim();
+    if (!title) return;
+    setSavingQuickReply(true);
+    try {
+      let image_url: string | null = null;
+      let video_url: string | null = null;
+      if (media) {
+        // Re-upload into the library bucket rather than reusing the
+        // chat-media URL directly — that object can be GC'd the moment
+        // this draft is discarded/sent, which would silently break the
+        // saved quick reply later.
+        const blob = await (await fetch(media.mediaUrl)).blob();
+        const bucket = media.kind === "video" ? "product-media" : "product-images";
+        const { publicUrl } = await uploadLibraryMedia(bucket, blob, media.filename);
+        if (media.kind === "video") video_url = publicUrl;
+        else image_url = publicUrl;
+      }
+      const res = await fetch("/api/quick-replies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, kind: "text", content_text: bodyText, image_url, video_url }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error ?? t("quickReplySaveError"));
+        return;
+      }
+      if (data.quick_reply) {
+        setQuickReplies((prev) => [data.quick_reply as QuickReply, ...prev]);
+      }
+      toast.success(t("quickReplySaved"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("quickReplySaveError"));
+    } finally {
+      setSavingQuickReply(false);
+    }
+  }, [drafts, draftCaption, text, t]);
+
   // A picked quick reply: text fills the composer; interactive opens the
   // builder pre-filled so the agent can tweak before sending.
   const handlePickQuickReply = useCallback(
@@ -561,12 +625,19 @@ export function MessageComposer({
         openInteractiveBuilder(qr.interactive_payload);
         return;
       }
-      if (qr.image_url) {
+      if (qr.image_url || qr.video_url) {
         // Same reasoning as the slash-menu path above: reusable library
         // asset, `path: ""` so it's never mistaken for an ephemeral
         // chat-media upload and GC'd. Replaces any staged batch.
         draftsRef.current.forEach((d) => removeStaged(d.path));
-        setDrafts([{ kind: "image", mediaUrl: qr.image_url, path: "", filename: qr.title }]);
+        setDrafts([
+          {
+            kind: qr.video_url ? "video" : "image",
+            mediaUrl: (qr.video_url ?? qr.image_url) as string,
+            path: "",
+            filename: qr.title,
+          },
+        ]);
         setDraftCaption(qr.content_text ?? "");
         return;
       }
@@ -970,6 +1041,8 @@ export function MessageComposer({
           onRemove={discardDraftAt}
           onDiscardAll={discardAllDrafts}
           onSend={sendDrafts}
+          onSaveAsQuickReply={saveComposerAsQuickReply}
+          savingQuickReply={savingQuickReply}
           t={t}
         />
       ) : recording ? (
@@ -1105,6 +1178,23 @@ export function MessageComposer({
             }
           />
 
+          <GatedButton
+            variant="ghost"
+            size="sm"
+            canAct={!readOnly}
+            gateReason="send messages"
+            disabled={savingQuickReply || !text.trim()}
+            title={readOnly ? undefined : t("saveComposerAsQuickReplyTitle")}
+            className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground disabled:opacity-40"
+            onClick={saveComposerAsQuickReply}
+          >
+            {savingQuickReply ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Pencil className="h-4 w-4" />
+            )}
+          </GatedButton>
+
           <div className="relative flex-1">
             {slashMenuOpen && (
               <SlashQuickReplyMenu
@@ -1225,6 +1315,8 @@ function MediaDraftPreview({
   onRemove,
   onDiscardAll,
   onSend,
+  onSaveAsQuickReply,
+  savingQuickReply,
   t,
 }: {
   drafts: MediaDraft[];
@@ -1236,6 +1328,8 @@ function MediaDraftPreview({
   onRemove: (index: number) => void;
   onDiscardAll: () => void;
   onSend: () => void;
+  onSaveAsQuickReply: () => void;
+  savingQuickReply: boolean;
   t: ReturnType<typeof useTranslations>;
 }) {
   const single = drafts.length === 1 ? drafts[0] : null;
@@ -1243,6 +1337,9 @@ function MediaDraftPreview({
   // when the whole batch is audio, since the caption would have nowhere
   // to land.
   const showCaption = drafts.some((d) => d.kind !== "audio");
+  // Quick replies only support a single photo/video attachment — the
+  // "save as quick reply" pencil only makes sense for that shape.
+  const canSaveAsQuickReply = single !== null && (single.kind === "image" || single.kind === "video");
 
   return (
     <div className="rounded-xl border border-border bg-muted/40 p-3">
@@ -1268,6 +1365,22 @@ function MediaDraftPreview({
             </div>
           )}
         </div>
+        {canSaveAsQuickReply && (
+          <button
+            type="button"
+            onClick={onSaveAsQuickReply}
+            disabled={savingQuickReply}
+            aria-label={t("saveComposerAsQuickReplyTitle")}
+            title={t("saveComposerAsQuickReplyTitle")}
+            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
+          >
+            {savingQuickReply ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Pencil className="h-4 w-4" />
+            )}
+          </button>
+        )}
         <button
           type="button"
           onClick={onDiscardAll}
