@@ -7,6 +7,7 @@ import {
   matchesContactFilters,
   normalizeConversations,
 } from "@/lib/inbox/conversations";
+import { normalizePhone } from "@/lib/whatsapp/phone-utils";
 import { cn } from "@/lib/utils";
 import { avatarColorFor } from "@/lib/avatar-color";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
@@ -96,31 +97,51 @@ export function ConversationList({
     let cancelled = false;
 
     (async () => {
-      const { data, error } = await supabase
-        .from("conversations")
-        .select(CONVERSATION_SELECT)
-        // `nullsFirst: false` — a conversation that never received a
-        // message has last_message_at = NULL, and Postgres treats NULL
-        // as the largest value, so DESC order (the default here) puts
-        // it first and keeps it pinned above every real, recent
-        // conversation forever.
-        .order("last_message_at", { ascending: false, nullsFirst: false });
+      // PostgREST caps any single request at 1000 rows by default. This
+      // account has 3000+ conversations, so a plain unpaginated select
+      // silently truncated to the 1000 most-recently-active ones — any
+      // older conversation (and its contact) never reached the browser
+      // at all, so it could never show up, search or not. Page through
+      // with `.range()` until a page comes back short of the page size.
+      const PAGE_SIZE = 1000;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const all: any[] = [];
+      let offset = 0;
 
-      if (cancelled) return;
+      for (;;) {
+        const { data, error } = await supabase
+          .from("conversations")
+          .select(CONVERSATION_SELECT)
+          // `nullsFirst: false` — a conversation that never received a
+          // message has last_message_at = NULL, and Postgres treats NULL
+          // as the largest value, so DESC order (the default here) puts
+          // it first and keeps it pinned above every real, recent
+          // conversation forever.
+          .order("last_message_at", { ascending: false, nullsFirst: false })
+          .range(offset, offset + PAGE_SIZE - 1);
 
-      if (error) {
-        // Supabase errors have non-enumerable properties — log fields explicitly
-        console.error("Failed to fetch conversations:", {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code,
-        });
-        setLoading(false);
-        return;
+        if (cancelled) return;
+
+        if (error) {
+          // Supabase errors have non-enumerable properties — log fields explicitly
+          console.error("Failed to fetch conversations:", {
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
+            code: error.code,
+          });
+          setLoading(false);
+          return;
+        }
+
+        const page = data ?? [];
+        all.push(...page);
+
+        if (page.length < PAGE_SIZE) break;
+        offset += PAGE_SIZE;
       }
 
-      onConversationsLoadedRef.current(normalizeConversations(data ?? []));
+      onConversationsLoadedRef.current(normalizeConversations(all));
       setLoading(false);
     })();
 
@@ -185,11 +206,21 @@ export function ConversationList({
 
     if (search.trim()) {
       const q = search.toLowerCase();
+      // Phone numbers aren't always stored digits-only — contacts added
+      // manually or via CSV import keep whatever formatting was typed
+      // ("+51 987-654-321"), while WhatsApp-sourced contacts are plain
+      // digits. A raw substring match misses the formatted ones whenever
+      // the search text doesn't contain the exact same spaces/dashes, so
+      // also compare digits-only on both sides.
+      const qDigits = normalizePhone(q);
       result = result.filter((c) => {
         const name = c.contact?.name?.toLowerCase() ?? "";
         const phone = c.contact?.phone?.toLowerCase() ?? "";
+        const phoneDigits = normalizePhone(c.contact?.phone ?? "");
         const lastMsg = c.last_message_text?.toLowerCase() ?? "";
-        return name.includes(q) || phone.includes(q) || lastMsg.includes(q);
+        const phoneMatches =
+          phone.includes(q) || (qDigits.length > 0 && phoneDigits.includes(qDigits));
+        return name.includes(q) || phoneMatches || lastMsg.includes(q);
       });
     }
 
