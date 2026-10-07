@@ -8,6 +8,7 @@ import {
 import {
   HANDOFF_SENTINEL_REGEX,
   IMAGE_SENTINEL_REGEX,
+  LOCATION_SENTINEL_REGEX,
   NOREPLY_SENTINEL,
   POTENCIAL_SENTINEL_REGEX,
   SHIPMENT_SENTINEL_REGEX,
@@ -82,6 +83,15 @@ export function parseGeneration(
   const noReply = raw.includes(NOREPLY_SENTINEL)
   const imageMatch = raw.match(IMAGE_SENTINEL_REGEX)
   const imageKey = imageMatch ? imageMatch[1].trim() : null
+  const imageKeys = Array.from(
+    new Set(
+      Array.from(raw.matchAll(new RegExp(IMAGE_SENTINEL_REGEX.source, 'g'))).map((m) =>
+        m[1].trim(),
+      ),
+    ),
+  )
+  const locationMatch = raw.match(LOCATION_SENTINEL_REGEX)
+  const locationKey = locationMatch ? locationMatch[1].trim() : null
   const shipmentMatch = raw.match(SHIPMENT_SENTINEL_REGEX)
   const shipmentRaw = shipmentMatch ? shipmentMatch[1].trim() : null
   const reachedPaymentInfo = POTENCIAL_SENTINEL_REGEX.test(raw)
@@ -93,6 +103,7 @@ export function parseGeneration(
   // the extraction regexes above are unaffected.
   const handoffSentinelGlobal = new RegExp(HANDOFF_SENTINEL_REGEX.source, 'g')
   const imageSentinelGlobal = new RegExp(IMAGE_SENTINEL_REGEX.source, 'g')
+  const locationSentinelGlobal = new RegExp(LOCATION_SENTINEL_REGEX.source, 'g')
   const shipmentSentinelGlobal = new RegExp(SHIPMENT_SENTINEL_REGEX.source, 'g')
   const potencialSentinelGlobal = new RegExp(POTENCIAL_SENTINEL_REGEX.source, 'g')
   const text = raw
@@ -100,6 +111,7 @@ export function parseGeneration(
     .split(NOREPLY_SENTINEL)
     .join('')
     .replace(imageSentinelGlobal, '')
+    .replace(locationSentinelGlobal, '')
     .replace(shipmentSentinelGlobal, '')
     .replace(potencialSentinelGlobal, '')
     .trim()
@@ -109,6 +121,8 @@ export function parseGeneration(
     handoffReason,
     noReply,
     imageKey,
+    imageKeys,
+    locationKey,
     shipmentRaw,
     reachedPaymentInfo,
     usage,

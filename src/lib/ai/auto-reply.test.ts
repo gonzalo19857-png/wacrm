@@ -9,7 +9,9 @@ const h = vi.hoisted(() => ({
   generateReply: vi.fn(),
   engineSendText: vi.fn(),
   engineSendMedia: vi.fn(),
+  engineSendLocation: vi.fn(),
   getProductImage: vi.fn(),
+  getLocation: vi.fn(),
   sendNeedsReplyTelegramAlert: vi.fn(),
   quoteLastCustomerMessage: vi.fn(),
   applyPotentialTag: vi.fn(),
@@ -36,7 +38,13 @@ vi.mock('./config', () => ({ loadAiConfig: h.loadAiConfig }))
 vi.mock('./context', () => ({ buildConversationContext: h.buildConversationContext }))
 vi.mock('./knowledge', () => ({ retrieveKnowledgeForMessages: h.retrieveKnowledge }))
 vi.mock('./generate', () => ({ generateReply: h.generateReply }))
-vi.mock('./product-images', () => ({ getProductImage: h.getProductImage }))
+vi.mock('./product-images', async (importOriginal) => ({
+  // mediaKindFromUrl stays real — it's pure URL-extension logic, no
+  // reason to stub it, and the media-kind tests below rely on it.
+  ...(await importOriginal<Record<string, unknown>>()),
+  getProductImage: h.getProductImage,
+}))
+vi.mock('./locations', () => ({ getLocation: h.getLocation }))
 vi.mock('./handoff', async (importOriginal) => ({
   // buildHandoffSummary stays real — the handoff tests below assert on
   // its actual output. Only the two Telegram-notify exports are
@@ -64,6 +72,7 @@ vi.mock('@/lib/rate-limit', async (importOriginal) => ({
 vi.mock('@/lib/flows/meta-send', () => ({
   engineSendText: h.engineSendText,
   engineSendMedia: h.engineSendMedia,
+  engineSendLocation: h.engineSendLocation,
 }))
 vi.mock('./admin-client', () => ({
   supabaseAdmin: () => ({
@@ -164,9 +173,17 @@ beforeEach(() => {
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.retrieveKnowledge.mockResolvedValue({ excerpts: [], imageUrl: null })
-  h.generateReply.mockResolvedValue({ text: 'Hello!', handoff: false, imageKey: null })
+  h.generateReply.mockResolvedValue({
+    text: 'Hello!',
+    handoff: false,
+    imageKey: null,
+    imageKeys: [],
+    locationKey: null,
+  })
+  h.getLocation.mockResolvedValue(null)
   h.engineSendText.mockResolvedValue({ whatsapp_message_id: 'm1' })
   h.engineSendMedia.mockResolvedValue({ whatsapp_message_id: 'm2' })
+  h.engineSendLocation.mockResolvedValue({ whatsapp_message_id: 'm3' })
   h.getProductImage.mockResolvedValue(null)
   h.sendNeedsReplyTelegramAlert.mockClear()
   h.quoteLastCustomerMessage.mockReset()
@@ -180,6 +197,8 @@ describe('dispatchInboundToAiReply — Potencial tagging', () => {
       text: 'Puedes pagar por Yape',
       handoff: false,
       imageKey: null,
+      imageKeys: [],
+      locationKey: null,
       reachedPaymentInfo: true,
     })
 
@@ -198,6 +217,8 @@ describe('dispatchInboundToAiReply — Potencial tagging', () => {
       text: 'El precio es S/120',
       handoff: false,
       imageKey: null,
+      imageKeys: [],
+      locationKey: null,
       reachedPaymentInfo: false,
     })
 
@@ -212,6 +233,8 @@ describe('dispatchInboundToAiReply — Potencial tagging', () => {
       handoff: true,
       handoffReason: null,
       imageKey: null,
+      imageKeys: [],
+      locationKey: null,
       reachedPaymentInfo: true,
     })
 
@@ -255,6 +278,8 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
       text: 'Talla L',
       handoff: false,
       imageKey: 'suv-l',
+      imageKeys: ['suv-l'],
+      locationKey: null,
     })
     h.getProductImage.mockResolvedValue('https://example.com/suv-l.jpg')
     await dispatchInboundToAiReply(ARGS)
@@ -266,6 +291,25 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
         link: 'https://example.com/suv-l.jpg',
         caption: '*talla L*',
       }),
+    )
+    expect(h.engineSendText).not.toHaveBeenCalled()
+  })
+
+  it('sends the reply as a video, not an image, when the resolved URL is a video file', async () => {
+    // Regression: the send kind used to be hardcoded to 'image', which
+    // Meta's Graph API rejects for an actual video file (e.g. the LED
+    // product-line demo clips) — see mediaKindFromUrl in product-images.ts.
+    h.generateReply.mockResolvedValue({
+      text: 'Para su Honda Tornado le conviene el de 55W',
+      handoff: false,
+      imageKey: 'video-techla-55',
+      imageKeys: ['video-techla-55'],
+      locationKey: null,
+    })
+    h.getProductImage.mockResolvedValue('https://example.com/video-techla-55.mp4')
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendMedia).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'video', link: 'https://example.com/video-techla-55.mp4' }),
     )
     expect(h.engineSendText).not.toHaveBeenCalled()
   })
@@ -288,6 +332,8 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
       text: 'Talla L',
       handoff: false,
       imageKey: 'suv-l',
+      imageKeys: ['suv-l'],
+      locationKey: null,
     })
     h.getProductImage.mockResolvedValue(null) // key not configured for this account
     await dispatchInboundToAiReply(ARGS)
@@ -302,6 +348,8 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
       text: 'x'.repeat(1025),
       handoff: false,
       imageKey: 'suv-l',
+      imageKeys: ['suv-l'],
+      locationKey: null,
     })
     h.getProductImage.mockResolvedValue('https://example.com/suv-l.jpg')
     await dispatchInboundToAiReply(ARGS)
@@ -314,11 +362,124 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
       text: 'Talla L',
       handoff: false,
       imageKey: 'suv-l',
+      imageKeys: ['suv-l'],
+      locationKey: null,
     })
     h.getProductImage.mockResolvedValue('https://example.com/suv-l.jpg')
     h.engineSendMedia.mockRejectedValue(new Error('meta down'))
     await expect(dispatchInboundToAiReply(ARGS)).resolves.toBeUndefined()
     expect(h.engineSendText).toHaveBeenCalled()
+  })
+
+  it('sends text, then a real location pin, when the model emits a [[LOCATION:<key>]] sentinel', async () => {
+    h.generateReply.mockResolvedValue({
+      text: 'Su cita queda confirmada, le esperamos!',
+      handoff: false,
+      imageKey: null,
+      imageKeys: [],
+      locationKey: 'taller',
+    })
+    h.getLocation.mockResolvedValue({
+      name: 'GMVA Auto',
+      address: 'Av. La Marina 1640 int. 27, San Miguel',
+      latitude: -12.07,
+      longitude: -77.08,
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Su cita queda confirmada, le esperamos!' }),
+    )
+    expect(h.engineSendLocation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 'conv-1',
+        latitude: -12.07,
+        longitude: -77.08,
+        name: 'GMVA Auto',
+        address: 'Av. La Marina 1640 int. 27, San Miguel',
+      }),
+    )
+    expect(h.engineSendMedia).not.toHaveBeenCalled()
+  })
+
+  it('skips the location send (text-only) when the sentinel key has no configured match', async () => {
+    h.generateReply.mockResolvedValue({
+      text: 'Su cita queda confirmada, le esperamos!',
+      handoff: false,
+      imageKey: null,
+      imageKeys: [],
+      locationKey: 'taller',
+    })
+    h.getLocation.mockResolvedValue(null) // key not configured for this account
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalled()
+    expect(h.engineSendLocation).not.toHaveBeenCalled()
+  })
+
+  it('sends every requested image, not just the first, when the model emits more than one [[IMAGE:<key>]]', async () => {
+    h.generateReply.mockResolvedValue({
+      text: 'Aquí tiene el croquis para llegar',
+      handoff: false,
+      imageKey: 'croquis-taller',
+      imageKeys: ['croquis-taller', 'croquis-taller-fachada'],
+      locationKey: null,
+    })
+    h.getProductImage.mockImplementation((_db: unknown, _accountId: string, key: string) =>
+      Promise.resolve(`https://example.com/${key}.jpg`),
+    )
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Aquí tiene el croquis para llegar' }),
+    )
+    expect(h.engineSendMedia).toHaveBeenCalledTimes(2)
+    expect(h.engineSendMedia).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ link: 'https://example.com/croquis-taller.jpg' }),
+    )
+    expect(h.engineSendMedia).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ link: 'https://example.com/croquis-taller-fachada.jpg' }),
+    )
+  })
+
+  it('sends location + text + image together in one compound turn', async () => {
+    h.generateReply.mockResolvedValue({
+      text: 'Su cita queda confirmada, le esperamos!',
+      handoff: false,
+      imageKey: 'croquis-taller',
+      imageKeys: ['croquis-taller'],
+      locationKey: 'taller',
+    })
+    h.getLocation.mockResolvedValue({
+      name: 'GMVA Auto',
+      address: 'Av. La Marina 1640 int. 27, San Miguel',
+      latitude: -12.07,
+      longitude: -77.08,
+    })
+    h.getProductImage.mockResolvedValue('https://example.com/croquis-taller.jpg')
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalled()
+    expect(h.engineSendLocation).toHaveBeenCalled()
+    expect(h.engineSendMedia).toHaveBeenCalledWith(
+      expect.objectContaining({ link: 'https://example.com/croquis-taller.jpg' }),
+    )
+  })
+
+  it('skips an unresolved extra image key but still sends the first', async () => {
+    h.generateReply.mockResolvedValue({
+      text: 'Aquí tiene el croquis',
+      handoff: false,
+      imageKey: 'croquis-taller',
+      imageKeys: ['croquis-taller', 'not-configured'],
+      locationKey: null,
+    })
+    h.getProductImage.mockImplementation((_db: unknown, _accountId: string, key: string) =>
+      Promise.resolve(key === 'croquis-taller' ? 'https://example.com/croquis-taller.jpg' : null),
+    )
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendMedia).toHaveBeenCalledTimes(1)
+    expect(h.engineSendMedia).toHaveBeenCalledWith(
+      expect.objectContaining({ link: 'https://example.com/croquis-taller.jpg' }),
+    )
   })
 
   it('stands down when an active message-level automation exists', async () => {

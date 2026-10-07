@@ -123,7 +123,7 @@ interface SendMessengerMediaArgs {
   accountId: string
   conversationId: string
   contactId: string
-  kind: 'image'
+  kind: 'image' | 'video'
   /** Public URL Meta fetches at send time. */
   link: string
   caption?: string
@@ -131,11 +131,11 @@ interface SendMessengerMediaArgs {
 }
 
 /**
- * Send an image from the AI auto-reply bot. Unlike WhatsApp, Messenger's
- * Send API has no separate caption field on an attachment — the caption
- * (if any) is sent as its own preceding text message so the customer
- * still sees the recommendation text, matching what the WhatsApp path
- * sends as one combined bubble.
+ * Send an image or video from the AI auto-reply bot. Unlike WhatsApp,
+ * Messenger's Send API has no separate caption field on an attachment —
+ * the caption (if any) is sent as its own preceding text message so the
+ * customer still sees the recommendation text, matching what the
+ * WhatsApp path sends as one combined bubble.
  */
 export async function engineSendMessengerMedia(
   args: SendMessengerMediaArgs,

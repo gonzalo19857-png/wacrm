@@ -16,12 +16,13 @@ import {
   stripRepeatedRecommendation,
   guardAgainstUnfilledName,
 } from './format-whatsapp'
-import { getProductImage } from './product-images'
+import { getProductImage, mediaKindFromUrl } from './product-images'
+import { getLocation } from './locations'
 import { getShipmentStatusContext, parseShipmentSentinel, upsertShipmentFromSentinel } from './shipment'
 import { pushUpdateShipment } from '@/lib/contacts/sale-sheet'
 import { applyPotentialTag } from '@/lib/contacts/lifecycle-tags'
 import { logAiUsage } from './usage'
-import { engineSendText, engineSendMedia } from '@/lib/flows/meta-send'
+import { engineSendText, engineSendMedia, engineSendLocation } from '@/lib/flows/meta-send'
 import { engineSendMessengerText, engineSendMessengerMedia } from '@/lib/messenger/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 
@@ -247,6 +248,8 @@ export async function dispatchInboundToAiReply(
       handoffReason,
       noReply,
       imageKey,
+      imageKeys,
+      locationKey,
       shipmentRaw,
       reachedPaymentInfo,
       usage,
@@ -477,37 +480,103 @@ export async function dispatchInboundToAiReply(
     // re-emitting the sentinel) can retrieve a completely unrelated
     // document — better to send no image than the wrong one.
     const resolvedImageUrl = imageKey ? await getProductImage(db, accountId, imageKey) : null
+    // `ai_product_images` holds photos AND, since the LED product line,
+    // short demo videos under the same key -> URL mapping (its
+    // `image_url` column name predates that) — infer which one this is
+    // from the URL rather than assuming 'image', since Meta's Graph API
+    // rejects a video file sent as an image attachment.
+    const resolvedMediaKind = resolvedImageUrl ? mediaKindFromUrl(resolvedImageUrl) : null
 
-    // Product photo: providers are text-only, so this is the only way a
-    // picture reaches the customer without a human. Sent as ONE message
-    // — the image with the reply as its caption — rather than two, so
-    // the recommendation and the photo land together. Meta caps image
-    // captions at 1024 chars; on the rare reply that runs longer, skip
-    // the image rather than risk the send failing outright.
-    if (resolvedImageUrl && text.length <= 1024) {
-      try {
-        if (channel === 'messenger') {
-          await engineSendMessengerMedia({
+    // A real WhatsApp location pin (e.g. directions to a physical
+    // taller) — Messenger has no equivalent send here, so this only
+    // ever resolves on the WhatsApp channel.
+    const resolvedLocation =
+      channel === 'whatsapp' && locationKey ? await getLocation(db, accountId, locationKey) : null
+
+    // Any `[[IMAGE:<key>]]` beyond the first (e.g. two photos of how to
+    // reach a taller) — the single-media fast path below already covers
+    // the common one-image case, so this only resolves when the model
+    // asked for more than one. Missing/unregistered keys degrade to
+    // "skip that one", same policy as the single-image path.
+    const extraImageKeys = imageKeys.slice(1)
+    const extraImages =
+      extraImageKeys.length > 0
+        ? (
+            await Promise.all(
+              extraImageKeys.map(async (key) => ({
+                key,
+                url: await getProductImage(db, accountId, key),
+              })),
+            )
+          ).filter((x): x is { key: string; url: string } => !!x.url)
+        : []
+
+    const sendMediaItem = (kind: 'image' | 'video', link: string, caption?: string) =>
+      channel === 'messenger'
+        ? engineSendMessengerMedia({
             accountId,
             conversationId,
             contactId,
-            kind: 'image',
-            link: resolvedImageUrl,
-            caption: text,
+            kind,
+            link,
+            caption,
             aiGenerated: true,
           })
-        } else {
-          await engineSendMedia({
+        : engineSendMedia({
             accountId,
             userId: configOwnerUserId,
             conversationId,
             contactId,
-            kind: 'image',
-            link: resolvedImageUrl,
-            caption: text,
+            kind,
+            link,
+            caption,
+            aiGenerated: true,
+          })
+
+    if (resolvedLocation || extraImages.length > 0) {
+      // Compound turn: a location pin and/or more than one image — none
+      // of WhatsApp's message types bundle those together, so send the
+      // reply as its own text message first, then the pin, then every
+      // requested image (including the first) as separate messages.
+      // Every other turn (the overwhelming majority — a single image or
+      // none) falls through to the unchanged fast path below instead.
+      try {
+        await sendText()
+        if (resolvedLocation) {
+          await engineSendLocation({
+            accountId,
+            userId: configOwnerUserId,
+            conversationId,
+            contactId,
+            latitude: resolvedLocation.latitude,
+            longitude: resolvedLocation.longitude,
+            name: resolvedLocation.name,
+            address: resolvedLocation.address,
             aiGenerated: true,
           })
         }
+        const allImages = [
+          ...(resolvedImageUrl && resolvedMediaKind
+            ? [{ url: resolvedImageUrl, kind: resolvedMediaKind }]
+            : []),
+          ...extraImages.map((x) => ({ url: x.url, kind: mediaKindFromUrl(x.url) })),
+        ]
+        for (const img of allImages) {
+          await sendMediaItem(img.kind, img.url)
+        }
+      } catch (err) {
+        console.error('[ai auto-reply] compound location/image send failed partway:', err)
+      }
+    } else if (resolvedImageUrl && resolvedMediaKind && text.length <= 1024) {
+      // Product photo/video: providers are text-only, so this is the
+      // only way a picture or clip reaches the customer without a
+      // human. Sent as ONE message — the media with the reply as its
+      // caption — rather than two, so the recommendation and the
+      // attachment land together. Meta caps media captions at 1024
+      // chars; on the rare reply that runs longer, skip the attachment
+      // rather than risk the send failing outright.
+      try {
+        await sendMediaItem(resolvedMediaKind, resolvedImageUrl, text)
       } catch (err) {
         console.error(
           '[ai auto-reply] image+caption send failed, falling back to text-only:',

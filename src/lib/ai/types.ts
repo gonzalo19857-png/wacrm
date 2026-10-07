@@ -81,8 +81,19 @@ export interface GenerateResult {
    *  human handoff, no auto-reply state change (auto-reply mode). */
   noReply: boolean
   /** The key from a `[[IMAGE:<key>]]` sentinel, or null if the model
-   *  didn't request a specific product image. */
+   *  didn't request a specific product image. When the model emits
+   *  more than one in the same turn, this is the first — see
+   *  `imageKeys` for all of them, in order, deduped. */
   imageKey: string | null
+  /** Every `[[IMAGE:<key>]]` key the model emitted this turn, in
+   *  order, deduped — `imageKey` is just `imageKeys[0] ?? null`. Lets
+   *  a caller send more than one attachment (e.g. two photos) instead
+   *  of silently dropping all but the first. */
+  imageKeys: string[]
+  /** The key from a `[[LOCATION:<key>]]` sentinel, or null if the
+   *  model didn't ask to send a real WhatsApp location pin this turn.
+   *  Resolved against `ai_locations`, not `ai_product_images`. */
+  locationKey: string | null
   /** Raw `key=value;...` payload from a `[[SHIPMENT:...]]` sentinel
    *  (auto-reply mode), or null if the model didn't emit one this
    *  turn. Parsed by `src/lib/ai/shipment.ts#parseShipmentSentinel`. */

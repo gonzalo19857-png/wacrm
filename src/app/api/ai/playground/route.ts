@@ -11,6 +11,7 @@ import {
   stripRepeatedRecommendation,
   guardAgainstUnfilledName,
 } from '@/lib/ai/format-whatsapp'
+import { getProductImage, mediaKindFromUrl } from '@/lib/ai/product-images'
 import { AiError, type ChatMessage } from '@/lib/ai/types'
 
 // Keep the tested transcript bounded, mirroring the live context window.
@@ -95,7 +96,7 @@ export async function POST(request: Request) {
       timeHint: limaTimeHint(),
     })
 
-    const { text: rawText, handoff, noReply } = await generateReply({
+    const { text: rawText, handoff, noReply, imageKey } = await generateReply({
       config,
       systemPrompt,
       messages,
@@ -111,7 +112,17 @@ export async function POST(request: Request) {
         stripRepeatedRecommendation(rawText, priorAssistantMessages),
       ),
     )
-    return NextResponse.json({ reply: text, handoff, noReply })
+
+    // Resolve the model's `[[IMAGE:<key>]]` pick (if any) to a real URL,
+    // same as the live auto-reply bot — otherwise testing a flow that's
+    // supposed to attach a product photo/video here shows only the text,
+    // which isn't what a real customer sees.
+    const resolvedImageUrl = imageKey ? await getProductImage(supabase, accountId, imageKey) : null
+    const media = resolvedImageUrl
+      ? { url: resolvedImageUrl, kind: mediaKindFromUrl(resolvedImageUrl) }
+      : null
+
+    return NextResponse.json({ reply: text, handoff, noReply, media })
   } catch (err) {
     if (err instanceof AiError) {
       return NextResponse.json(

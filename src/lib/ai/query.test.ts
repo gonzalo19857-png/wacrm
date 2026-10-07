@@ -114,4 +114,21 @@ describe('retrievalQueryCandidates', () => {
       'Hyundai Tucson\n2019',
     ])
   })
+
+  it('tries the customer\'s own words before the bare "LED" anchor, once LED is established', () => {
+    // Regression: querying just "LED" for a ~200-SKU catalog surfaced
+    // five arbitrary chunks, never the specific model asked about
+    // (observed live: "Serie MAX3" never matched its own chunk). The
+    // customer's actual words go first; 'LED' only backstops a vague
+    // follow-up with no product words of its own.
+    const messages = [
+      { role: 'user' as const, content: 'hola quiero un led' },
+      { role: 'assistant' as const, content: '¿Qué vehículo tiene?' },
+      { role: 'user' as const, content: 'cuánto cuesta el serie MAX3 canbus?' },
+    ]
+    expect(retrievalQueryCandidates(messages)).toEqual([
+      'cuánto cuesta el serie MAX3 canbus?',
+      'LED',
+    ])
+  })
 })

@@ -111,7 +111,18 @@ export function retrievalQueryCandidates(
   adProductLine?: 'led' | 'cobertor' | null,
 ): string[] {
   const latest = latestUserMessage(messages, 1)
-  if (isLedConversation(messages, adProductLine)) return ['LED']
+  if (isLedConversation(messages, adProductLine)) {
+    // Try the customer's own words first — a named model ("Serie MAX3",
+    // "barra led 22 pulgadas") only matches its real chunk this way; the
+    // LED catalog is ~200 SKUs across 8 categories, so the bare 'LED'
+    // fallback below is too blunt to find a specific one (observed live:
+    // it surfaced five unrelated chunks, never the one asked about).
+    // 'LED' stays as the fallback for a vague follow-up with no product
+    // words of its own ("de cuántos w es?") — that's what keeps retrieval
+    // anchored in LED docs instead of falling through to a vehicle-name
+    // query that would match cobertor's talla chunks instead.
+    return [latest, 'LED']
+  }
   if (alreadyRecommendedTalla(messages)) return [latest]
   const widened = latestUserMessage(messages, DEFAULT_WINDOW)
   return latest === widened ? [latest] : [latest, widened]

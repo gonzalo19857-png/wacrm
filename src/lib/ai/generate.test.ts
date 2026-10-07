@@ -47,6 +47,8 @@ describe('parseGeneration', () => {
       handoffReason: null,
       noReply: false,
       imageKey: null,
+      imageKeys: [],
+      locationKey: null,
       shipmentRaw: null,
       reachedPaymentInfo: false,
       usage: null,
@@ -60,6 +62,8 @@ describe('parseGeneration', () => {
       handoffReason: null,
       noReply: false,
       imageKey: null,
+      imageKeys: [],
+      locationKey: null,
       shipmentRaw: null,
       reachedPaymentInfo: false,
       usage: null,
@@ -70,6 +74,8 @@ describe('parseGeneration', () => {
       handoffReason: null,
       noReply: false,
       imageKey: null,
+      imageKeys: [],
+      locationKey: null,
       shipmentRaw: null,
       reachedPaymentInfo: false,
       usage: null,
@@ -83,6 +89,8 @@ describe('parseGeneration', () => {
       handoffReason: 'lima',
       noReply: false,
       imageKey: null,
+      imageKeys: [],
+      locationKey: null,
       shipmentRaw: null,
       reachedPaymentInfo: false,
       usage: null,
@@ -93,6 +101,8 @@ describe('parseGeneration', () => {
       handoffReason: 'provincia',
       noReply: false,
       imageKey: null,
+      imageKeys: [],
+      locationKey: null,
       shipmentRaw: null,
       reachedPaymentInfo: false,
       usage: null,
@@ -108,6 +118,8 @@ describe('parseGeneration', () => {
       handoffReason: null,
       noReply: true,
       imageKey: null,
+      imageKeys: [],
+      locationKey: null,
       shipmentRaw: null,
       reachedPaymentInfo: false,
       usage: null,
@@ -122,6 +134,8 @@ describe('parseGeneration', () => {
       handoffReason: null,
       noReply: false,
       imageKey: null,
+      imageKeys: [],
+      locationKey: null,
       shipmentRaw: null,
       reachedPaymentInfo: false,
       usage,
@@ -135,6 +149,8 @@ describe('parseGeneration', () => {
       handoffReason: null,
       noReply: false,
       imageKey: 'sedan-l',
+      imageKeys: ['sedan-l'],
+      locationKey: null,
       shipmentRaw: null,
       reachedPaymentInfo: false,
       usage: null,
@@ -151,6 +167,22 @@ describe('parseGeneration', () => {
     )
     expect(result.text).toBe('Mototaxi: talla única\n\nSedán: talla M')
     expect(result.imageKey).toBe('mototaxi-torito')
+    expect(result.imageKeys).toEqual(['mototaxi-torito', 'sedan-m'])
+  })
+
+  it('dedupes repeated image sentinel keys in imageKeys', () => {
+    const result = parseGeneration(
+      'Aquí el video [[IMAGE:video-techla-55]]\n\nY de nuevo [[IMAGE:video-techla-55]]',
+    )
+    expect(result.imageKeys).toEqual(['video-techla-55'])
+  })
+
+  it('detects + strips the location sentinel', () => {
+    const result = parseGeneration(
+      'Su cita queda confirmada, le esperamos! [[LOCATION:taller]]',
+    )
+    expect(result.text).toBe('Su cita queda confirmada, le esperamos!')
+    expect(result.locationKey).toBe('taller')
   })
 
   it('detects + strips the shipment sentinel', () => {
@@ -164,6 +196,8 @@ describe('parseGeneration', () => {
       handoffReason: null,
       noReply: false,
       imageKey: null,
+      imageKeys: [],
+      locationKey: null,
       shipmentRaw: 'region=provincia;city=Arequipa;agency=Shalom Mercaderes;name=Juan Perez',
       reachedPaymentInfo: false,
       usage: null,
@@ -213,6 +247,8 @@ describe('generateReply — OpenAI', () => {
       handoffReason: null,
       noReply: false,
       imageKey: null,
+      imageKeys: [],
+      locationKey: null,
       shipmentRaw: null,
       reachedPaymentInfo: false,
       usage: { promptTokens: 42, completionTokens: 8, totalTokens: 50 },
@@ -277,6 +313,8 @@ describe('generateReply — Anthropic', () => {
       handoffReason: null,
       noReply: false,
       imageKey: null,
+      imageKeys: [],
+      locationKey: null,
       shipmentRaw: null,
       reachedPaymentInfo: false,
       usage: { promptTokens: 30, completionTokens: 6, totalTokens: 36 },
@@ -363,6 +401,8 @@ describe('generateReply — OpenRouter', () => {
       handoffReason: null,
       noReply: false,
       imageKey: null,
+      imageKeys: [],
+      locationKey: null,
       shipmentRaw: null,
       reachedPaymentInfo: false,
       usage: { promptTokens: 42, completionTokens: 8, totalTokens: 50 },

@@ -1,6 +1,7 @@
 import {
   sendInteractiveButtons,
   sendInteractiveList,
+  sendLocationMessage,
   sendMediaMessage,
   sendTextMessage,
   type InteractiveButton,
@@ -265,6 +266,126 @@ export async function engineSendMedia(
     content_type: args.kind,
     content_text: args.caption ?? null,
     media_url: args.link,
+    message_id: waMessageId,
+    status: 'sent',
+    ai_generated: args.aiGenerated ?? false,
+  })
+  if (msgErr) {
+    throw new Error(`sent to Meta but DB insert failed: ${msgErr.message}`)
+  }
+
+  await db
+    .from('conversations')
+    .update({
+      last_message_text: preview,
+      last_message_sender_type: 'bot',
+      last_message_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', args.conversationId)
+
+  return { whatsapp_message_id: waMessageId }
+}
+
+interface SendLocationEngineArgs {
+  accountId: string
+  userId: string
+  conversationId: string
+  contactId: string
+  latitude: number
+  longitude: number
+  name?: string | null
+  address?: string | null
+  /** Marks the persisted message row `ai_generated = true` so the inbox
+   *  badges it as an AI reply. Mirrors `SendMediaEngineArgs.aiGenerated`. */
+  aiGenerated?: boolean
+}
+
+/**
+ * Send a real, tappable WhatsApp location pin from the Flows/AI engine
+ * (the `[[LOCATION:<key>]]` sentinel — see `src/lib/ai/locations.ts`).
+ * Same phone-variant retry + DB persistence pattern as `engineSendMedia`.
+ *
+ * Persists `content_text` as `name - address - "lat,lng"` (coordinates
+ * always last) — the same convention the webhook uses for an inbound
+ * location and that `message-bubble.tsx` / `forward-message.ts` already
+ * parse to build a tappable Maps link, so a bot-sent pin round-trips
+ * through the inbox exactly like any other location message.
+ */
+export async function engineSendLocation(
+  args: SendLocationEngineArgs,
+): Promise<{ whatsapp_message_id: string }> {
+  const db = supabaseAdmin()
+
+  const { data: contact, error: contactErr } = await db
+    .from('contacts')
+    .select('id, phone')
+    .eq('id', args.contactId)
+    .eq('account_id', args.accountId)
+    .maybeSingle()
+  if (contactErr || !contact?.phone) {
+    throw new Error('contact not found for this account')
+  }
+
+  const sanitized = resolveSendablePhone(contact.phone)
+  if (!isValidE164(sanitized) && !isBsuid(sanitized)) {
+    throw new Error(`contact phone invalid: ${contact.phone}`)
+  }
+
+  const { data: config, error: configErr } = await db
+    .from('whatsapp_config')
+    .select('*')
+    .eq('account_id', args.accountId)
+    .single()
+  if (configErr || !config) {
+    throw new Error('WhatsApp not configured for this account')
+  }
+
+  const accessToken = decrypt(config.access_token)
+
+  const attempt = async (phone: string): Promise<string> => {
+    const r = await sendLocationMessage({
+      phoneNumberId: config.phone_number_id,
+      accessToken,
+      to: phone,
+      latitude: args.latitude,
+      longitude: args.longitude,
+      name: args.name || undefined,
+      address: args.address || undefined,
+    })
+    return r.messageId
+  }
+
+  const variants = isBsuid(sanitized) ? [sanitized] : phoneVariants(sanitized)
+  let workingPhone = sanitized
+  let waMessageId = ''
+  let lastError: unknown = null
+  for (const v of variants) {
+    try {
+      waMessageId = await attempt(v)
+      workingPhone = v
+      lastError = null
+      break
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!isRecipientNotAllowedError(msg)) throw err
+      lastError = err
+    }
+  }
+  if (lastError) throw lastError
+
+  if (workingPhone !== sanitized) {
+    await db.from('contacts').update({ phone: workingPhone }).eq('id', contact.id)
+  }
+
+  const preview = [args.name, args.address, `${args.latitude},${args.longitude}`]
+    .filter(Boolean)
+    .join(' - ')
+  const { error: msgErr } = await db.from('messages').insert({
+    conversation_id: args.conversationId,
+    sender_type: 'bot',
+    content_type: 'location',
+    content_text: preview,
     message_id: waMessageId,
     status: 'sent',
     ai_generated: args.aiGenerated ?? false,

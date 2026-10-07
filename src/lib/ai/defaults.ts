@@ -61,6 +61,18 @@ export const IMAGE_SENTINEL_PREFIX = '[[IMAGE:'
 export const IMAGE_SENTINEL_REGEX = /\[\[IMAGE:([^\]]+)\]\]/
 
 /**
+ * Sentinel the model uses to attach a real WhatsApp location pin
+ * (`[[LOCATION:<key>]]`) — e.g. directions to a physical store/taller.
+ * Unlike `IMAGE_SENTINEL_REGEX`, the key resolves against `ai_locations`
+ * (see `src/lib/ai/locations.ts`), never against `ai_product_images` —
+ * a pin needs lat/lng + name/address, not a media URL. The account's
+ * own system prompt defines which keys exist.
+ */
+export const LOCATION_SENTINEL_PREFIX = '[[LOCATION:'
+/** Matches `[[LOCATION:<key>]]`, capturing `<key>`. */
+export const LOCATION_SENTINEL_REGEX = /\[\[LOCATION:([^\]]+)\]\]/
+
+/**
  * Sentinel the model uses (auto-reply mode) to record delivery
  * details it has gathered for a Provincia (Shalom) or Lima order —
  * e.g. `[[SHIPMENT:region=provincia;city=Arequipa;agency=Shalom

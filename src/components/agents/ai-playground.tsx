@@ -13,6 +13,9 @@ interface Turn {
   handoff?: boolean;
   /** assistant-only: the agent chose to stay silent on this turn. */
   noReply?: boolean;
+  /** assistant-only: the product photo/video the agent attached, if any —
+   *  what a real customer would receive alongside this reply. */
+  media?: { url: string; kind: 'image' | 'video' } | null;
 }
 
 export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
@@ -64,6 +67,7 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
               : '',
           handoff: Boolean(data.handoff),
           noReply: Boolean(data.noReply),
+          media: data.media ?? null,
         },
       ]);
     } catch {
@@ -146,6 +150,29 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
                   : 'rounded-bl-sm bg-muted text-foreground',
               )}
             >
+              {t.role === 'assistant' && t.media && (
+                <div
+                  className={cn(
+                    'overflow-hidden rounded-xl',
+                    t.content && 'mb-1.5',
+                  )}
+                >
+                  {t.media.kind === 'video' ? (
+                    <video
+                      src={t.media.url}
+                      controls
+                      className="max-h-64 w-full rounded-xl bg-black"
+                    />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={t.media.url}
+                      alt=""
+                      className="max-h-64 w-full rounded-xl object-cover"
+                    />
+                  )}
+                </div>
+              )}
               {t.content && <p className="whitespace-pre-wrap">{t.content}</p>}
               {t.role === 'assistant' && t.handoff && (
                 <p
