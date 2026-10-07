@@ -5,6 +5,7 @@ import {
   normalizeUsage,
   providerHttpError,
   toNetworkError,
+  toOpenAiChatMessage,
   type ProviderArgs,
 } from './shared'
 
@@ -40,7 +41,7 @@ export async function generateOpenRouter(args: ProviderArgs): Promise<ProviderRe
         model,
         messages: [
           { role: 'system', content: systemPrompt },
-          ...mergeConsecutive(messages),
+          ...mergeConsecutive(messages).map(toOpenAiChatMessage),
         ],
         max_tokens: MAX_OUTPUT_TOKENS,
       }),

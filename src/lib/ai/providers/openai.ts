@@ -5,6 +5,7 @@ import {
   normalizeUsage,
   providerHttpError,
   toNetworkError,
+  toOpenAiChatMessage,
   type ProviderArgs,
 } from './shared'
 
@@ -39,7 +40,7 @@ export async function generateOpenAi(args: ProviderArgs): Promise<ProviderResult
         model,
         messages: [
           { role: 'system', content: systemPrompt },
-          ...mergeConsecutive(messages),
+          ...mergeConsecutive(messages).map(toOpenAiChatMessage),
         ],
         max_completion_tokens: MAX_OUTPUT_TOKENS,
       }),

@@ -41,6 +41,12 @@ export interface AiConfig {
 export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
+  /** Inline photos attached to this turn, as `data:` URIs — e.g. a
+   *  product photo or payment receipt the customer sent. Only
+   *  vision-capable models see these; each provider adapter decides how
+   *  to fold them into its own request shape. Undefined/empty for the
+   *  overwhelming majority of turns (plain text). */
+  images?: string[]
 }
 
 /**

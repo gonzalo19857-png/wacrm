@@ -90,6 +90,37 @@ export async function providerHttpError(
   })
 }
 
+/** One turn in OpenAI/OpenRouter's Chat Completions message shape. */
+export interface OpenAiChatMessage {
+  role: 'user' | 'assistant'
+  content:
+    | string
+    | Array<
+        | { type: 'text'; text: string }
+        | { type: 'image_url'; image_url: { url: string } }
+      >
+}
+
+/**
+ * Fold a `ChatMessage` into the OpenAI-compatible shape both the OpenAI
+ * and OpenRouter adapters send. Plain text stays a bare string (cheapest
+ * payload, and matches every request before vision existed); a message
+ * carrying `images` becomes a content-parts array instead, since that's
+ * the only shape the Chat Completions API accepts images in.
+ */
+export function toOpenAiChatMessage(m: ChatMessage): OpenAiChatMessage {
+  if (!m.images?.length) {
+    return { role: m.role, content: m.content }
+  }
+  return {
+    role: m.role,
+    content: [
+      ...(m.content ? [{ type: 'text' as const, text: m.content }] : []),
+      ...m.images.map((url) => ({ type: 'image_url' as const, image_url: { url } })),
+    ],
+  }
+}
+
 /**
  * Collapse consecutive same-role turns into one (joined with blank
  * lines). Anthropic requires strictly alternating roles; merging is
@@ -100,9 +131,14 @@ export function mergeConsecutive(messages: ChatMessage[]): ChatMessage[] {
   for (const m of messages) {
     const last = out[out.length - 1]
     if (last && last.role === m.role) {
-      last.content = `${last.content}\n\n${m.content}`
+      if (m.content) {
+        last.content = last.content ? `${last.content}\n\n${m.content}` : m.content
+      }
+      if (m.images?.length) {
+        last.images = [...(last.images ?? []), ...m.images]
+      }
     } else {
-      out.push({ role: m.role, content: m.content })
+      out.push({ role: m.role, content: m.content, images: m.images })
     }
   }
   return out

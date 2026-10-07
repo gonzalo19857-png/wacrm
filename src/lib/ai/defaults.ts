@@ -95,6 +95,18 @@ export const POTENCIAL_SENTINEL_REGEX = /\[\[STAGE:MEDIOS_PAGO\]\]/
  *  check). Sized with headroom for that, not just the visible reply. */
 export const MAX_OUTPUT_TOKENS = 2048
 
+/** How many of the most recent customer photos in a conversation's
+ *  context window get sent to the model as actual vision input (inlined
+ *  as base64). Older images still register as "[El cliente envió una
+ *  imagen.]" text — bounding this keeps a long photo-heavy thread from
+ *  ballooning every single request's payload and vision-token cost. */
+export const AI_VISION_MAX_IMAGES = 3
+
+/** Cap on the raw (pre-base64) bytes of a customer photo that gets
+ *  inlined for vision. Base64 inflates size ~33%; this keeps the
+ *  inflated payload comfortably under providers' per-request limits. */
+export const AI_VISION_MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
 const DEFAULT_CONTEXT_MESSAGE_LIMIT = 20
 const DEFAULT_AI_DEBOUNCE_MS = 6_000

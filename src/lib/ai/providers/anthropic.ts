@@ -8,6 +8,43 @@ import {
   type ProviderArgs,
 } from './shared'
 
+interface AnthropicChatMessage {
+  role: 'user' | 'assistant'
+  content:
+    | string
+    | Array<
+        | { type: 'text'; text: string }
+        | {
+            type: 'image'
+            source: { type: 'base64'; media_type: string; data: string }
+          }
+      >
+}
+
+/**
+ * Fold a `ChatMessage` into Anthropic's content-block shape. Images come
+ * first and text last, per Anthropic's own recommendation for
+ * image+caption turns. A `data:` URI that fails to parse (shouldn't
+ * happen — `context.ts` only ever builds well-formed ones) is dropped
+ * rather than sent malformed.
+ */
+function toAnthropicMessage(m: ChatMessage): AnthropicChatMessage {
+  if (!m.images?.length) {
+    return { role: m.role, content: m.content }
+  }
+  const blocks: AnthropicChatMessage['content'] = []
+  for (const url of m.images) {
+    const match = url.match(/^data:([^;]+);base64,(.+)$/)
+    if (!match) continue
+    blocks.push({
+      type: 'image',
+      source: { type: 'base64', media_type: match[1], data: match[2] },
+    })
+  }
+  if (m.content) blocks.push({ type: 'text', text: m.content })
+  return { role: m.role, content: blocks }
+}
+
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages'
 const ANTHROPIC_VERSION = '2023-06-01'
 
@@ -55,7 +92,7 @@ export async function generateAnthropic(args: ProviderArgs): Promise<ProviderRes
         model,
         system: systemPrompt,
         max_tokens: MAX_OUTPUT_TOKENS,
-        messages: normalizeForAnthropic(messages),
+        messages: normalizeForAnthropic(messages).map(toAnthropicMessage),
       }),
       signal: AbortSignal.timeout(timeoutMs),
     })
