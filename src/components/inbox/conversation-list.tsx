@@ -36,6 +36,14 @@ interface ConversationListProps {
    * or the tab was throttled. Optional so existing callers keep working.
    */
   resyncToken?: number;
+  /**
+   * Reports when the pointer enters/leaves this panel. The parent uses
+   * it to hold back list-reordering realtime updates while the agent is
+   * hovering (about to click a row) — see isHoveringListRef in
+   * src/app/(dashboard)/inbox/page.tsx. Optional so existing callers
+   * keep working.
+   */
+  onHoverChange?: (hovering: boolean) => void;
 }
 
 const STATUS_COLORS: Record<ConversationStatus, string> = {
@@ -54,6 +62,7 @@ export function ConversationList({
   conversations,
   onConversationsLoaded,
   resyncToken = 0,
+  onHoverChange,
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
   
@@ -290,7 +299,11 @@ export function ConversationList({
     // w-full on mobile so the list occupies the whole viewport when it's
     // the single pane showing; fixed 320px on desktop where it shares the
     // row with the thread + contact sidebar.
-    <div className="flex h-full w-full flex-col border-r border-border bg-card lg:w-80">
+    <div
+      className="flex h-full w-full flex-col border-r border-border bg-card lg:w-80"
+      onMouseEnter={() => onHoverChange?.(true)}
+      onMouseLeave={() => onHoverChange?.(false)}
+    >
       {/* Search + Filter */}
       <div className="space-y-2 border-b border-border p-3">
         <div className="relative">

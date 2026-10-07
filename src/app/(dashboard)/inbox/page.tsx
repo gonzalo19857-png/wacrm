@@ -122,6 +122,39 @@ function InboxPageInner() {
     knownConvIdsRef.current = next;
   }, [conversations]);
 
+  /**
+   * A conversation that jumps to the top of the list the instant it gets
+   * its first message — a brand-new lead, the most common case on a
+   * sales inbox — shifts every row below it down by one. If the agent's
+   * mouse was already on its way to click a row, the click lands on
+   * whatever conversation is now under the cursor instead of the one
+   * they were aiming at, and they can end up typing a reply into a
+   * stranger's thread without noticing (reported: "a veces mandas un
+   * mensaje a otro cliente por error"). Rather than touch the (correct,
+   * data-is-fresh) realtime handling, we just hold back the specific
+   * updates that change row ORDER while the pointer is over the list,
+   * and flush them the instant it leaves — same data, just not shifting
+   * under an aimed cursor. Updates that only patch an existing row's
+   * text/unread fields in place (no reorder) are unaffected.
+   */
+  const isHoveringListRef = useRef(false);
+  const pendingListUpdatesRef = useRef<Array<() => void>>([]);
+  const runOrQueueListUpdate = useCallback((apply: () => void) => {
+    if (isHoveringListRef.current) {
+      pendingListUpdatesRef.current.push(apply);
+    } else {
+      apply();
+    }
+  }, []);
+  const handleListHoverChange = useCallback((hovering: boolean) => {
+    isHoveringListRef.current = hovering;
+    if (!hovering && pendingListUpdatesRef.current.length > 0) {
+      const queued = pendingListUpdatesRef.current;
+      pendingListUpdatesRef.current = [];
+      for (const apply of queued) apply();
+    }
+  }, []);
+
   // Pull the conversation row with its `contact` joined and merge it
   // into state. Needed because Supabase Realtime payloads only carry the
   // row's own columns — a brand-new conversation arrives without a
@@ -153,26 +186,36 @@ function InboxPageInner() {
       }
       if (!data) return;
       const fetched = normalizeConversation(data);
-      setConversations((prev) => {
-        const existing = prev.find((c) => c.id === fetched.id);
-        if (existing) {
-          // Already in state — keep its fields (a realtime UPDATE may
-          // have landed while the fetch was in flight and patched
-          // last_message_text / unread_count to fresher values than
-          // the row we just read). Only backfill `contact`, which the
-          // realtime payloads never carry.
-          return prev.map((c) =>
+      const patchExisting = () =>
+        setConversations((prev) =>
+          prev.map((c) =>
             c.id === fetched.id
               ? { ...c, contact: c.contact ?? fetched.contact }
               : c,
-          );
-        }
-        return [fetched, ...prev];
-      });
+          ),
+        );
+      const prependNew = () =>
+        setConversations((prev) =>
+          prev.some((c) => c.id === fetched.id) ? prev : [fetched, ...prev],
+        );
+      if (knownConvIdsRef.current.has(fetched.id)) {
+        // Already in state — keep its fields (a realtime UPDATE may have
+        // landed while the fetch was in flight and patched
+        // last_message_text / unread_count to fresher values than the
+        // row we just read). Only backfill `contact`, which the
+        // realtime payloads never carry. Doesn't reorder the list, so
+        // it's safe to apply immediately even while the agent is
+        // hovering it.
+        patchExisting();
+      } else {
+        // A genuinely new row — this is the one that shifts every
+        // existing row down by one, so it goes through the hover queue.
+        runOrQueueListUpdate(prependNew);
+      }
     } finally {
       hydratingConvIdsRef.current.delete(convId);
     }
-  }, []);
+  }, [runOrQueueListUpdate]);
 
   // Check WhatsApp connection status on mount
   useEffect(() => {
@@ -303,9 +346,13 @@ function InboxPageInner() {
         // already have the row — that shouldn't happen normally, but
         // out-of-order delivery would have us prepending a duplicate.
         if (!knownConvIdsRef.current.has(conv.id)) {
-          setConversations((prev) => {
-            if (prev.some((c) => c.id === conv.id)) return prev;
-            return [conv, ...prev];
+          // Shifts every row below it down by one — held back while the
+          // agent's pointer is over the list (see isHoveringListRef).
+          runOrQueueListUpdate(() => {
+            setConversations((prev) => {
+              if (prev.some((c) => c.id === conv.id)) return prev;
+              return [conv, ...prev];
+            });
           });
           hydrateConversation(conv.id);
         }
@@ -346,7 +393,7 @@ function InboxPageInner() {
         }
       }
     },
-    [activeConversation, hydrateConversation]
+    [activeConversation, hydrateConversation, runOrQueueListUpdate]
   );
 
   // Subscribe to realtime. The `isConnected` flag below feeds the
@@ -465,6 +512,12 @@ function InboxPageInner() {
       // when conversationId changes — so messages would stay empty until
       // the user navigated away and back. Bail out early instead.
       if (activeConversation?.id === conv.id) return;
+      // Flush any list-reorder updates held back while hovering (see
+      // isHoveringListRef). On mobile, selecting a conversation hides
+      // the list panel via CSS without the pointer ever leaving it, so
+      // the normal onMouseLeave flush would never fire — this is the
+      // explicit safety net that keeps updates from queuing forever.
+      handleListHoverChange(false);
       setActiveConversation(conv);
       setActiveContact(conv.contact ?? null);
       setMessages([]);
@@ -497,7 +550,7 @@ function InboxPageInner() {
       // replace() to avoid polluting browser history with every click.
       router.replace(`/inbox?c=${conv.id}`, { scroll: false });
     },
-    [activeConversation?.id, router]
+    [activeConversation?.id, router, handleListHoverChange]
   );
 
   // Mobile "back" — deselect the conversation so the list pane comes
@@ -602,6 +655,7 @@ function InboxPageInner() {
             conversations={conversations}
             onConversationsLoaded={handleConversationsLoaded}
             resyncToken={resyncToken}
+            onHoverChange={handleListHoverChange}
           />
         </div>
 
