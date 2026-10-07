@@ -98,50 +98,80 @@ export function ConversationList({
 
     (async () => {
       // PostgREST caps any single request at 1000 rows by default. This
-      // account has 3000+ conversations, so a plain unpaginated select
+      // account has 4000+ conversations, so a plain unpaginated select
       // silently truncated to the 1000 most-recently-active ones — any
       // older conversation (and its contact) never reached the browser
-      // at all, so it could never show up, search or not. Page through
-      // with `.range()` until a page comes back short of the page size.
+      // at all, so it could never show up, search or not.
+      //
+      // Pages are fetched in PARALLEL, not one after another. This list
+      // reloads on every realtime reconnect and every tab focus
+      // (`resyncToken`), and a sequential walk of 4+ pages — each a
+      // nested contact/tags join over this account's full conversation
+      // table — measured at 3+ seconds in production (each page ~0.6-1s,
+      // chained). That multi-second window is where "the inbox doesn't
+      // update, I have to wait or hit F5" came from: the UI looked
+      // frozen while it re-pulled everything instead of only the new
+      // activity. Firing every remaining page at once turns the same
+      // amount of data into roughly one page's worth of wall-clock time.
       const PAGE_SIZE = 1000;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const all: any[] = [];
-      let offset = 0;
-
-      for (;;) {
-        const { data, error } = await supabase
+      // `nullsFirst: false` — a conversation that never received a
+      // message has last_message_at = NULL, and Postgres treats NULL
+      // as the largest value, so DESC order (the default here) puts
+      // it first and keeps it pinned above every real, recent
+      // conversation forever.
+      const orderedQuery = (withCount: boolean) =>
+        supabase
           .from("conversations")
-          .select(CONVERSATION_SELECT)
-          // `nullsFirst: false` — a conversation that never received a
-          // message has last_message_at = NULL, and Postgres treats NULL
-          // as the largest value, so DESC order (the default here) puts
-          // it first and keeps it pinned above every real, recent
-          // conversation forever.
-          .order("last_message_at", { ascending: false, nullsFirst: false })
-          .range(offset, offset + PAGE_SIZE - 1);
+          .select(CONVERSATION_SELECT, withCount ? { count: "exact" } : undefined)
+          .order("last_message_at", { ascending: false, nullsFirst: false });
+
+      const first = await orderedQuery(true).range(0, PAGE_SIZE - 1);
+
+      if (cancelled) return;
+
+      if (first.error) {
+        // Supabase errors have non-enumerable properties — log fields explicitly
+        console.error("Failed to fetch conversations:", {
+          message: first.error.message,
+          details: first.error.details,
+          hint: first.error.hint,
+          code: first.error.code,
+        });
+        setLoading(false);
+        return;
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pages: any[][] = [first.data ?? []];
+      const total = first.count ?? pages[0].length;
+
+      if (total > PAGE_SIZE) {
+        const remainingPages = Math.ceil((total - PAGE_SIZE) / PAGE_SIZE);
+        const rest = await Promise.all(
+          Array.from({ length: remainingPages }, (_, i) => {
+            const offset = PAGE_SIZE * (i + 1);
+            return orderedQuery(false).range(offset, offset + PAGE_SIZE - 1);
+          })
+        );
 
         if (cancelled) return;
 
-        if (error) {
-          // Supabase errors have non-enumerable properties — log fields explicitly
-          console.error("Failed to fetch conversations:", {
-            message: error.message,
-            details: error.details,
-            hint: error.hint,
-            code: error.code,
-          });
-          setLoading(false);
-          return;
+        for (const page of rest) {
+          if (page.error) {
+            console.error("Failed to fetch conversations:", {
+              message: page.error.message,
+              details: page.error.details,
+              hint: page.error.hint,
+              code: page.error.code,
+            });
+            setLoading(false);
+            return;
+          }
+          pages.push(page.data ?? []);
         }
-
-        const page = data ?? [];
-        all.push(...page);
-
-        if (page.length < PAGE_SIZE) break;
-        offset += PAGE_SIZE;
       }
 
-      onConversationsLoadedRef.current(normalizeConversations(all));
+      onConversationsLoadedRef.current(normalizeConversations(pages.flat()));
       setLoading(false);
     })();
 
